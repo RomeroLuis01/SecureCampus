@@ -1,0 +1,10 @@
+// Exportación unificada de componentes base de SecureCampus
+export * from './Button'
+export * from './Badge'
+export * from './Card'
+export * from './Input'
+export * from './Select'
+export * from './Modal'
+export * from './Table'
+export * from './Sidebar'
+export * from './Topbar'
