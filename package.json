@@ -4,7 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:ui": "vite",
+    "db:up": "docker compose up -d",
+    "db:stop": "docker compose stop",
+    "db:migrate": "docker compose run --rm migrate up",
+    "db:status": "docker compose ps",
+    "db:logs": "docker compose logs -f db",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

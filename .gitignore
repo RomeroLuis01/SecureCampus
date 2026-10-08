@@ -1,5 +1,9 @@
 # Config and credentials
 config.txt
+.env
+.env.*
+!.env.example
+postgres_data/
 
 # Logs
 logs

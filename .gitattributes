@@ -1,0 +1,12 @@
+# Git attributes y normalización de saltos de línea para SecureCampus
+
+# Detección automática de texto
+* text=auto
+
+# Scripts de shell para Linux / Docker DEBEN conservar LF obligatoriamente
+*.sh text eol=lf
+
+# Archivos de migración y configuración
+*.sql text eol=lf
+docker-compose.yml text eol=lf
+.env.example text eol=lf
