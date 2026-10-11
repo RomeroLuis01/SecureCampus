@@ -73,3 +73,10 @@ export async function closePool(): Promise<void> {
 }
 
 export type { QueryResult, QueryResultRow };
+
+export {
+  withUserTransaction,
+  TransactionContextError,
+  type TransactionClient,
+  type TransactionOptions,
+} from '../db/index.js';
