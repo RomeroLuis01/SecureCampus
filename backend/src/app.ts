@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import { apiRouter } from './routes/index.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
-import { createErrorHandler } from './middleware/errorHandler.js';
+import { createErrorHandler, CorsOriginError } from './middleware/errorHandler.js';
 import type { EnvConfig } from './config/env.js';
 
 export function createApp(config: EnvConfig): express.Express {
@@ -21,7 +21,7 @@ export function createApp(config: EnvConfig): express.Express {
         if (!origin || allowedOrigins.includes(origin)) {
           return callback(null, true);
         }
-        return callback(new Error(`Origin '${origin}' not allowed by CORS`));
+        return callback(new CorsOriginError(`Origin '${origin}' not allowed by CORS`));
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
