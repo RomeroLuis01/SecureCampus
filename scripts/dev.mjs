@@ -9,29 +9,32 @@ const rootDir = path.resolve(__dirname, '..');
 const viteBin = path.join(rootDir, 'node_modules', 'vite', 'bin', 'vite.js');
 const dockerBin = isWindows ? 'docker.exe' : 'docker';
 
-console.log('\n📦 [SecureCampus] Coordinando entorno de desarrollo...');
+console.log('\n [SecureCampus] Coordinando entorno de desarrollo...');
 
 let dockerStarted = false;
 
-// 1. Iniciar PostgreSQL en segundo plano con Docker
-try {
-  console.log('🐳 [Docker] Levantando base de datos y ejecutando migraciones...');
-  const res = spawnSync(dockerBin, ['compose', 'up', '-d'], {
+// 1. PostgreSQL y migraciones (espera a que la base esté sana y a que terminen)
+const up = spawnSync(dockerBin, ['compose', 'up', '-d', '--wait', 'db'], {
+  cwd: rootDir,
+  stdio: 'inherit',
+});
+
+if (up.status === 0) {
+  dockerStarted = true; // para que Ctrl+C apague la base aunque fallen las migraciones
+  const mig = spawnSync(dockerBin, ['compose', 'run', '--rm', 'migrate'], {
     cwd: rootDir,
     stdio: 'inherit',
   });
-
-  if (res.status === 0) {
-    dockerStarted = true;
-    console.log('✅ [Docker] Base de datos activa en puerto 5433.');
+  if (mig.status === 0) {
+    console.log(' [Docker] Base de datos lista y migraciones aplicadas.');
   } else {
-    console.warn('⚠️  [Docker] No se pudo levantar el contenedor. ¿Docker Desktop está iniciado? Continuando con el frontend...');
+    console.error(' [Docker] Fallaron las migraciones. Revisa el error de arriba.');
   }
-} catch {
-  console.warn('⚠️  [Docker] Docker CLI no disponible. Continuando con el frontend...');
+} else {
+  console.warn('  [Docker] No se pudo levantar la base. ¿Docker Desktop está iniciado? Continuando con el frontend...');
 }
 
-// 2. Iniciar el servidor Vite con el mismo binario de Node
+// 2. Servidor Vite con el mismo binario de Node
 const vite = spawn(process.execPath, [viteBin, ...process.argv.slice(2)], {
   cwd: rootDir,
   stdio: 'inherit',
@@ -39,24 +42,28 @@ const vite = spawn(process.execPath, [viteBin, ...process.argv.slice(2)], {
 
 let isShuttingDown = false;
 
-function cleanupAndExit() {
+function cleanupAndExit(code = 0) {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
+  if (vite.exitCode === null && !vite.killed) {
+    vite.kill();
+  }
+
   if (dockerStarted) {
-    console.log('\n🛑 [Docker] Deteniendo PostgreSQL para liberar memoria RAM y CPU...');
+    console.log('\n [Docker] Deteniendo PostgreSQL para liberar memoria RAM y CPU...');
     try {
       spawnSync(dockerBin, ['compose', 'stop'], {
         cwd: rootDir,
         stdio: 'inherit',
       });
-      console.log('💤 [Docker] Contenedor detenido correctamente. ¡Hasta pronto!\n');
+      console.log(' [Docker] Contenedor detenido correctamente. ¡Hasta pronto!\n');
     } catch {
       // Ignorar errores al apagar
     }
   }
 
-  process.exit(0);
+  process.exit(code);
 }
 
 // Capturar Ctrl+C en Windows
@@ -65,14 +72,11 @@ if (isWindows && process.stdin.isTTY) {
     input: process.stdin,
     output: process.stdout,
   });
-  rl.on('SIGINT', () => {
-    cleanupAndExit();
-  });
+  rl.on('SIGINT', () => cleanupAndExit(0));
 }
 
-process.on('SIGINT', cleanupAndExit);
-process.on('SIGTERM', cleanupAndExit);
+process.on('SIGINT', () => cleanupAndExit(0));
+process.on('SIGTERM', () => cleanupAndExit(0));
+process.on('SIGHUP', () => cleanupAndExit(0));
 
-vite.on('exit', () => {
-  cleanupAndExit();
-});
+vite.on('exit', (code) => cleanupAndExit(code ?? 0));

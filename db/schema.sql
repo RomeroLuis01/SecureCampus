@@ -190,6 +190,30 @@ $$;
 
 
 --
+-- Name: fn_propagar_periodo_a_sesiones(); Type: FUNCTION; Schema: academico; Owner: -
+--
+
+CREATE FUNCTION academico.fn_propagar_periodo_a_sesiones() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE academico.sesiones_grupo
+       SET periodo_academico_id = NEW.periodo_academico_id
+     WHERE grupo_id = NEW.grupo_id;
+
+    RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION fn_propagar_periodo_a_sesiones(); Type: COMMENT; Schema: academico; Owner: -
+--
+
+COMMENT ON FUNCTION academico.fn_propagar_periodo_a_sesiones() IS 'Mantiene sesiones_grupo.periodo_academico_id igual al del grupo. Si el cambio provoca un traslape de aula en el periodo nuevo, la restriccion de exclusion aborta la operacion completa.';
+
+
+--
 -- Name: fn_registrar_cambio_calificacion(); Type: FUNCTION; Schema: academico; Owner: -
 --
 
@@ -302,15 +326,29 @@ $$;
 CREATE FUNCTION academico.fn_validar_carrera_inscripcion() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+    v_estado_alumno varchar(20);
 BEGIN
+    SELECT a.estado INTO v_estado_alumno
+    FROM academico.alumnos a
+    WHERE a.alumno_id = NEW.alumno_id;
+
+    IF v_estado_alumno IS DISTINCT FROM 'ACTIVO' THEN
+        RAISE EXCEPTION
+            'El alumno % no puede inscribirse: su estado es %',
+            NEW.alumno_id, COALESCE(v_estado_alumno, 'inexistente')
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1
         FROM academico.alumnos_carreras ac
         WHERE ac.alumno_id  = NEW.alumno_id
           AND ac.carrera_id = NEW.carrera_id
+          AND ac.fecha_fin IS NULL
     ) THEN
         RAISE EXCEPTION
-            'El alumno % no pertenece a la carrera del grupo %',
+            'El alumno % no tiene vigente la carrera del grupo %',
             NEW.alumno_id, NEW.grupo_id
             USING ERRCODE = 'integrity_constraint_violation';
     END IF;
@@ -328,8 +366,20 @@ CREATE FUNCTION academico.fn_validar_carrera_profesor_grupo() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    v_carrera_grupo uuid;
+    v_carrera_grupo   uuid;
+    v_estado_profesor varchar(20);
 BEGIN
+    SELECT p.estado INTO v_estado_profesor
+    FROM academico.profesores p
+    WHERE p.profesor_id = NEW.profesor_id;
+
+    IF v_estado_profesor IS DISTINCT FROM 'ACTIVO' THEN
+        RAISE EXCEPTION
+            'El profesor % no puede recibir grupos: su estado es %',
+            NEW.profesor_id, COALESCE(v_estado_profesor, 'inexistente')
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
     SELECT g.carrera_id INTO v_carrera_grupo
     FROM academico.grupos g
     WHERE g.grupo_id = NEW.grupo_id;
@@ -454,6 +504,37 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: fn_validar_transicion_inscripcion(); Type: FUNCTION; Schema: academico; Owner: -
+--
+
+CREATE FUNCTION academico.fn_validar_transicion_inscripcion() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF OLD.estado = NEW.estado THEN
+        RETURN NEW;
+    END IF;
+
+    IF OLD.estado <> 'INSCRITO' THEN
+        RAISE EXCEPTION
+            'La inscripcion % esta en estado final (%) y no puede pasar a %',
+            NEW.inscripcion_id, OLD.estado, NEW.estado
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION fn_validar_transicion_inscripcion(); Type: COMMENT; Schema: academico; Owner: -
+--
+
+COMMENT ON FUNCTION academico.fn_validar_transicion_inscripcion() IS 'INSCRITO -> COMPLETADA | CANCELADA. Ambos destinos son estados finales.';
 
 
 --
@@ -688,6 +769,33 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: fn_proteger_solicitud_resuelta(); Type: FUNCTION; Schema: solicitudes; Owner: -
+--
+
+CREATE FUNCTION solicitudes.fn_proteger_solicitud_resuelta() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF OLD.estado IN ('APROBADA', 'RECHAZADA', 'CANCELADA') THEN
+        RAISE EXCEPTION
+            'La solicitud % ya esta % y no puede modificarse',
+            OLD.solicitud_id, OLD.estado
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION fn_proteger_solicitud_resuelta(); Type: COMMENT; Schema: solicitudes; Owner: -
+--
+
+COMMENT ON FUNCTION solicitudes.fn_proteger_solicitud_resuelta() IS 'APROBADA, RECHAZADA y CANCELADA son estados finales: la fila queda congelada.';
 
 
 --
@@ -1692,14 +1800,6 @@ ALTER TABLE ONLY academico.grupos
 
 
 --
--- Name: inscripciones uq_inscripciones_alumno_grupo; Type: CONSTRAINT; Schema: academico; Owner: -
---
-
-ALTER TABLE ONLY academico.inscripciones
-    ADD CONSTRAINT uq_inscripciones_alumno_grupo UNIQUE (alumno_id, grupo_id);
-
-
---
 -- Name: materias uq_materias_codigo; Type: CONSTRAINT; Schema: academico; Owner: -
 --
 
@@ -2353,6 +2453,13 @@ CREATE TRIGGER trg_grupos_b_periodo BEFORE INSERT OR UPDATE OF periodo_academico
 
 
 --
+-- Name: grupos trg_grupos_c_propagar_periodo; Type: TRIGGER; Schema: academico; Owner: -
+--
+
+CREATE TRIGGER trg_grupos_c_propagar_periodo AFTER UPDATE OF periodo_academico_id ON academico.grupos FOR EACH ROW WHEN ((old.periodo_academico_id IS DISTINCT FROM new.periodo_academico_id)) EXECUTE FUNCTION academico.fn_propagar_periodo_a_sesiones();
+
+
+--
 -- Name: historial_calificaciones trg_historial_calificaciones_sin_truncate; Type: TRIGGER; Schema: academico; Owner: -
 --
 
@@ -2406,6 +2513,13 @@ CREATE TRIGGER trg_inscripciones_c_grupo BEFORE INSERT ON academico.inscripcione
 --
 
 CREATE TRIGGER trg_inscripciones_historial AFTER INSERT OR UPDATE OF estado ON academico.inscripciones FOR EACH ROW EXECUTE FUNCTION academico.fn_registrar_cambio_inscripcion();
+
+
+--
+-- Name: inscripciones trg_inscripciones_transicion; Type: TRIGGER; Schema: academico; Owner: -
+--
+
+CREATE TRIGGER trg_inscripciones_transicion BEFORE UPDATE OF estado ON academico.inscripciones FOR EACH ROW EXECUTE FUNCTION academico.fn_validar_transicion_inscripcion();
 
 
 --
@@ -2525,6 +2639,13 @@ CREATE TRIGGER trg_historial_solicitud_solo_insercion BEFORE DELETE OR UPDATE ON
 --
 
 CREATE TRIGGER trg_solicitudes_historial AFTER INSERT OR UPDATE OF estado ON solicitudes.solicitudes FOR EACH ROW EXECUTE FUNCTION solicitudes.fn_registrar_cambio_solicitud();
+
+
+--
+-- Name: solicitudes trg_solicitudes_resuelta_inmutable; Type: TRIGGER; Schema: solicitudes; Owner: -
+--
+
+CREATE TRIGGER trg_solicitudes_resuelta_inmutable BEFORE UPDATE ON solicitudes.solicitudes FOR EACH ROW EXECUTE FUNCTION solicitudes.fn_proteger_solicitud_resuelta();
 
 
 --

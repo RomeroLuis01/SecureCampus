@@ -1,10 +1,19 @@
 -- migrate:up
-
+-- ---------------------------------------------------------------------------
+-- SecureCampus - esquema inicial (PostgreSQL 16)
+--
+-- Esta migracion ya incluye las correcciones de logica de negocio y los
+-- permisos de los roles. Requisito: los roles securecampus_app y
+-- securecampus_lectura los crea db/init/01-roles.sh (con contrasena desde .env)
+-- al inicializar el volumen; aqui solo se les otorgan permisos.
+-- dbmate ya envuelve la migracion en una transaccion: no usar BEGIN/COMMIT.
+-- ---------------------------------------------------------------------------
 -- ---------------------------------------------------------------------------
 -- 0. Extensiones requeridas
 --    btree_gist: necesaria para la restriccion EXCLUDE de periodos academicos.
 -- ---------------------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 
 -- ---------------------------------------------------------------------------
 -- 1. Esquemas
@@ -684,6 +693,30 @@ ON academico.grupos
 FOR EACH ROW
 EXECUTE FUNCTION academico.fn_validar_periodo_grupo();
 
+-- El periodo de las sesiones siempre sigue al periodo de su grupo.
+CREATE OR REPLACE FUNCTION academico.fn_propagar_periodo_a_sesiones()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE academico.sesiones_grupo
+       SET periodo_academico_id = NEW.periodo_academico_id
+     WHERE grupo_id = NEW.grupo_id;
+
+    RETURN NULL;
+END;
+$$;
+
+COMMENT ON FUNCTION academico.fn_propagar_periodo_a_sesiones() IS
+'Mantiene sesiones_grupo.periodo_academico_id igual al del grupo. Si el cambio provoca un traslape de aula en el periodo nuevo, la restriccion de exclusion aborta la operacion completa.';
+
+CREATE TRIGGER trg_grupos_c_propagar_periodo
+AFTER UPDATE OF periodo_academico_id
+ON academico.grupos
+FOR EACH ROW
+WHEN (OLD.periodo_academico_id IS DISTINCT FROM NEW.periodo_academico_id)
+EXECUTE FUNCTION academico.fn_propagar_periodo_a_sesiones();
+
 CREATE TABLE academico.sesiones_grupo (
     sesion_grupo_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     grupo_id             uuid NOT NULL,
@@ -802,14 +835,26 @@ CREATE INDEX ix_asignaciones_profesor_grupo_vigente
 CREATE INDEX ix_asignaciones_profesor_profesor
     ON academico.asignaciones_profesor_grupo (profesor_id);
 
--- Un profesor solo recibe grupos de carreras donde este adscrito y vigente.
+-- Un profesor ACTIVO solo recibe grupos de carreras donde este adscrito y vigente.
 CREATE OR REPLACE FUNCTION academico.fn_validar_carrera_profesor_grupo()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_carrera_grupo uuid;
+    v_carrera_grupo   uuid;
+    v_estado_profesor varchar(20);
 BEGIN
+    SELECT p.estado INTO v_estado_profesor
+    FROM academico.profesores p
+    WHERE p.profesor_id = NEW.profesor_id;
+
+    IF v_estado_profesor IS DISTINCT FROM 'ACTIVO' THEN
+        RAISE EXCEPTION
+            'El profesor % no puede recibir grupos: su estado es %',
+            NEW.profesor_id, COALESCE(v_estado_profesor, 'inexistente')
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
     SELECT g.carrera_id INTO v_carrera_grupo
     FROM academico.grupos g
     WHERE g.grupo_id = NEW.grupo_id;
@@ -851,7 +896,9 @@ CREATE TABLE academico.inscripciones (
     completado_en        timestamptz,
     cancelado_en         timestamptz,
 
-    CONSTRAINT uq_inscripciones_alumno_grupo UNIQUE (alumno_id, grupo_id),
+    -- La unicidad por (alumno, materia, periodo) en filas no canceladas la da
+    -- ux_inscripciones_materia_periodo; tras cancelar, el alumno se reinscribe
+    -- con una fila nueva (que vuelve a pasar por cupo y estado del grupo).
     CONSTRAINT ck_inscripciones_estado CHECK (
         estado IN ('INSCRITO', 'COMPLETADA', 'CANCELADA')
     ),
@@ -910,19 +957,34 @@ ON academico.inscripciones
 FOR EACH ROW
 EXECUTE FUNCTION academico.fn_asignar_llaves_inscripcion();
 
+-- Solo alumnos ACTIVOS con la carrera del grupo VIGENTE (fecha_fin IS NULL) pueden inscribirse.
 CREATE OR REPLACE FUNCTION academico.fn_validar_carrera_inscripcion()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_estado_alumno varchar(20);
 BEGIN
+    SELECT a.estado INTO v_estado_alumno
+    FROM academico.alumnos a
+    WHERE a.alumno_id = NEW.alumno_id;
+
+    IF v_estado_alumno IS DISTINCT FROM 'ACTIVO' THEN
+        RAISE EXCEPTION
+            'El alumno % no puede inscribirse: su estado es %',
+            NEW.alumno_id, COALESCE(v_estado_alumno, 'inexistente')
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1
         FROM academico.alumnos_carreras ac
         WHERE ac.alumno_id  = NEW.alumno_id
           AND ac.carrera_id = NEW.carrera_id
+          AND ac.fecha_fin IS NULL
     ) THEN
         RAISE EXCEPTION
-            'El alumno % no pertenece a la carrera del grupo %',
+            'El alumno % no tiene vigente la carrera del grupo %',
             NEW.alumno_id, NEW.grupo_id
             USING ERRCODE = 'integrity_constraint_violation';
     END IF;
@@ -1029,6 +1091,37 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+-- Transiciones validas: INSCRITO -> COMPLETADA | CANCELADA, ambos estados finales.
+-- Para reinscribirse tras cancelar se crea una inscripcion nueva.
+CREATE OR REPLACE FUNCTION academico.fn_validar_transicion_inscripcion()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF OLD.estado = NEW.estado THEN
+        RETURN NEW;
+    END IF;
+
+    IF OLD.estado <> 'INSCRITO' THEN
+        RAISE EXCEPTION
+            'La inscripcion % esta en estado final (%) y no puede pasar a %',
+            NEW.inscripcion_id, OLD.estado, NEW.estado
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+COMMENT ON FUNCTION academico.fn_validar_transicion_inscripcion() IS
+'INSCRITO -> COMPLETADA | CANCELADA. Ambos destinos son estados finales.';
+
+CREATE TRIGGER trg_inscripciones_transicion
+BEFORE UPDATE OF estado
+ON academico.inscripciones
+FOR EACH ROW
+EXECUTE FUNCTION academico.fn_validar_transicion_inscripcion();
 
 CREATE TRIGGER trg_inscripciones_historial
 AFTER INSERT OR UPDATE OF estado
@@ -1518,6 +1611,31 @@ ON solicitudes.solicitudes
 FOR EACH ROW
 EXECUTE FUNCTION solicitudes.fn_registrar_cambio_solicitud();
 
+-- Una solicitud resuelta (APROBADA, RECHAZADA, CANCELADA) queda congelada.
+CREATE OR REPLACE FUNCTION solicitudes.fn_proteger_solicitud_resuelta()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF OLD.estado IN ('APROBADA', 'RECHAZADA', 'CANCELADA') THEN
+        RAISE EXCEPTION
+            'La solicitud % ya esta % y no puede modificarse',
+            OLD.solicitud_id, OLD.estado
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+COMMENT ON FUNCTION solicitudes.fn_proteger_solicitud_resuelta() IS
+'APROBADA, RECHAZADA y CANCELADA son estados finales: la fila queda congelada.';
+
+CREATE TRIGGER trg_solicitudes_resuelta_inmutable
+BEFORE UPDATE ON solicitudes.solicitudes
+FOR EACH ROW
+EXECUTE FUNCTION solicitudes.fn_proteger_solicitud_resuelta();
+
 CREATE TRIGGER trg_historial_solicitud_solo_insercion
 BEFORE UPDATE OR DELETE ON solicitudes.historial_estado_solicitud
 FOR EACH ROW EXECUTE FUNCTION auditoria.fn_rechazar_modificacion();
@@ -1584,9 +1702,9 @@ CREATE INDEX ix_bitacora_metadatos
     ON auditoria.bitacora USING gin (metadatos jsonb_path_ops);
 
 -- CORRECCION 5. ocurrido_en no puede venir del futuro.
--- Forzosamente un trigger y no un CHECK: PostgreSQL rechaza funciones no
--- inmutables como CURRENT_TIMESTAMP dentro de una restriccion CHECK. La
--- tolerancia se lee de app.tolerancia_reloj_segundos; por omision, 300 s.
+-- Se implementa con un trigger y no con un CHECK porque depende del reloj
+-- (CURRENT_TIMESTAMP no es inmutable) y de una tolerancia configurable que se
+-- lee de app.tolerancia_reloj_segundos; por omision, 300 s.
 CREATE OR REPLACE FUNCTION auditoria.fn_validar_momento_evento()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -1910,17 +2028,33 @@ ON CONFLICT (codigo) DO UPDATE
 SET nombre = EXCLUDED.nombre,
     descripcion = EXCLUDED.descripcion;
 
--- ==============================================================================
--- NOTA: Los roles (securecampus_app, securecampus_lectura) son creados por
--- db/init/01-roles.sh ANTES de que dbmate ejecute esta migración.
--- Los GRANT de los schemas están al final de la sección migrate:up arriba.
--- ==============================================================================
+
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+
+GRANT USAGE ON SCHEMA nucleo, seguridad, academico, documentos, solicitudes, auditoria
+    TO securecampus_app, securecampus_lectura;
+
+-- La aplicacion lee y escribe datos de negocio, pero nunca borra.
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA
+    nucleo, seguridad, academico, documentos, solicitudes
+    TO securecampus_app;
+
+-- La bitacora se escribe, jamas se altera ni se borra.
+GRANT SELECT, INSERT ON auditoria.bitacora TO securecampus_app;
+REVOKE UPDATE, DELETE ON auditoria.bitacora FROM securecampus_app;
+
+REVOKE DELETE ON ALL TABLES IN SCHEMA
+    nucleo, seguridad, academico, documentos, solicitudes, auditoria
+    FROM securecampus_app;
+
+-- Rol de solo lectura para reportes, sin acceso a identidad externa.
+GRANT SELECT ON ALL TABLES IN SCHEMA academico, solicitudes, documentos
+    TO securecampus_lectura;
+
+-- Que las tablas futuras hereden la misma politica.
+ALTER DEFAULT PRIVILEGES IN SCHEMA nucleo, seguridad, academico, documentos, solicitudes
+    GRANT SELECT, INSERT, UPDATE ON TABLES TO securecampus_app;
 
 -- migrate:down
-DROP SCHEMA IF EXISTS auditoria   CASCADE;
-DROP SCHEMA IF EXISTS solicitudes CASCADE;
-DROP SCHEMA IF EXISTS documentos  CASCADE;
-DROP SCHEMA IF EXISTS academico   CASCADE;
-DROP SCHEMA IF EXISTS seguridad   CASCADE;
-DROP SCHEMA IF EXISTS nucleo      CASCADE;
-DROP EXTENSION IF EXISTS btree_gist;
+-- Sin reversion: en desarrollo se recrea la base con `docker compose down -v`.
+SELECT 1;
