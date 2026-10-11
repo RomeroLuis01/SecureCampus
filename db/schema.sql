@@ -1414,6 +1414,32 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: credenciales; Type: TABLE; Schema: seguridad; Owner: -
+--
+
+CREATE TABLE seguridad.credenciales (
+    usuario_id uuid NOT NULL,
+    password_hash character varying(255) NOT NULL,
+    estado character varying(20) DEFAULT 'ACTIVO'::character varying NOT NULL,
+    intentos_fallidos integer DEFAULT 0 NOT NULL,
+    bloqueado_hasta timestamp with time zone,
+    password_actualizado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    actualizado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT ck_credenciales_estado CHECK (((estado)::text = ANY ((ARRAY['ACTIVO'::character varying, 'BLOQUEADO'::character varying, 'REQUIERE_CAMBIO'::character varying])::text[]))),
+    CONSTRAINT ck_credenciales_hash_no_vacio CHECK ((btrim((password_hash)::text) <> ''::text)),
+    CONSTRAINT ck_credenciales_intentos CHECK ((intentos_fallidos >= 0))
+);
+
+
+--
+-- Name: TABLE credenciales; Type: COMMENT; Schema: seguridad; Owner: -
+--
+
+COMMENT ON TABLE seguridad.credenciales IS 'Credenciales locales de aplicacion. Almacena exclusivamente el hash formateado PHC de Argon2id.';
+
+
+--
 -- Name: permisos; Type: TABLE; Schema: seguridad; Owner: -
 --
 
@@ -1454,13 +1480,39 @@ CREATE TABLE seguridad.roles_permisos (
 
 
 --
+-- Name: sesiones; Type: TABLE; Schema: seguridad; Owner: -
+--
+
+CREATE TABLE seguridad.sesiones (
+    sesion_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    usuario_id uuid NOT NULL,
+    token_hash character varying(64) NOT NULL,
+    creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    ultimo_acceso_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    expira_en timestamp with time zone NOT NULL,
+    revocado_en timestamp with time zone,
+    direccion_ip inet,
+    agente_usuario text,
+    CONSTRAINT ck_sesiones_fechas CHECK ((expira_en > creado_en)),
+    CONSTRAINT ck_sesiones_token_hash_formato CHECK (((token_hash)::text ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: TABLE sesiones; Type: COMMENT; Schema: seguridad; Owner: -
+--
+
+COMMENT ON TABLE seguridad.sesiones IS 'Sesiones activas e historicas. token_hash almacena unicamente el hash SHA-256 en formato hex.';
+
+
+--
 -- Name: usuarios; Type: TABLE; Schema: seguridad; Owner: -
 --
 
 CREATE TABLE seguridad.usuarios (
     usuario_id uuid DEFAULT gen_random_uuid() NOT NULL,
     persona_id uuid NOT NULL,
-    sujeto_identidad character varying(255) NOT NULL,
+    sujeto_identidad character varying(255),
     estado character varying(20) DEFAULT 'ACTIVO'::character varying NOT NULL,
     creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     actualizado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -1480,7 +1532,7 @@ COMMENT ON TABLE seguridad.usuarios IS 'Identidad de aplicacion. Las credenciale
 -- Name: COLUMN usuarios.sujeto_identidad; Type: COMMENT; Schema: seguridad; Owner: -
 --
 
-COMMENT ON COLUMN seguridad.usuarios.sujeto_identidad IS 'Identificador externo inmutable (claim sub de OIDC). Nunca contrasenas ni tokens.';
+COMMENT ON COLUMN seguridad.usuarios.sujeto_identidad IS 'Identificador externo inmutable (claim sub de OIDC). NULL para cuentas locales sin federacion activa.';
 
 
 --
@@ -1928,6 +1980,14 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: credenciales credenciales_pkey; Type: CONSTRAINT; Schema: seguridad; Owner: -
+--
+
+ALTER TABLE ONLY seguridad.credenciales
+    ADD CONSTRAINT credenciales_pkey PRIMARY KEY (usuario_id);
+
+
+--
 -- Name: permisos permisos_pkey; Type: CONSTRAINT; Schema: seguridad; Owner: -
 --
 
@@ -1952,6 +2012,14 @@ ALTER TABLE ONLY seguridad.roles
 
 
 --
+-- Name: sesiones sesiones_pkey; Type: CONSTRAINT; Schema: seguridad; Owner: -
+--
+
+ALTER TABLE ONLY seguridad.sesiones
+    ADD CONSTRAINT sesiones_pkey PRIMARY KEY (sesion_id);
+
+
+--
 -- Name: permisos uq_permisos_codigo; Type: CONSTRAINT; Schema: seguridad; Owner: -
 --
 
@@ -1965,6 +2033,14 @@ ALTER TABLE ONLY seguridad.permisos
 
 ALTER TABLE ONLY seguridad.roles
     ADD CONSTRAINT uq_roles_codigo UNIQUE (codigo);
+
+
+--
+-- Name: sesiones uq_sesiones_token_hash; Type: CONSTRAINT; Schema: seguridad; Owner: -
+--
+
+ALTER TABLE ONLY seguridad.sesiones
+    ADD CONSTRAINT uq_sesiones_token_hash UNIQUE (token_hash);
 
 
 --
@@ -2320,6 +2396,13 @@ CREATE INDEX ix_roles_permisos_permiso ON seguridad.roles_permisos USING btree (
 
 
 --
+-- Name: ix_sesiones_usuario_vigente; Type: INDEX; Schema: seguridad; Owner: -
+--
+
+CREATE INDEX ix_sesiones_usuario_vigente ON seguridad.sesiones USING btree (usuario_id) WHERE (revocado_en IS NULL);
+
+
+--
 -- Name: ix_usuarios_roles_carrera; Type: INDEX; Schema: seguridad; Owner: -
 --
 
@@ -2590,6 +2673,13 @@ CREATE TRIGGER trg_carreras_actualizado BEFORE UPDATE ON nucleo.carreras FOR EAC
 --
 
 CREATE TRIGGER trg_personas_actualizado BEFORE UPDATE ON nucleo.personas FOR EACH ROW EXECUTE FUNCTION nucleo.fn_actualizar_marca_tiempo();
+
+
+--
+-- Name: credenciales trg_credenciales_actualizado; Type: TRIGGER; Schema: seguridad; Owner: -
+--
+
+CREATE TRIGGER trg_credenciales_actualizado BEFORE UPDATE ON seguridad.credenciales FOR EACH ROW EXECUTE FUNCTION nucleo.fn_actualizar_marca_tiempo();
 
 
 --
@@ -2889,6 +2979,14 @@ ALTER TABLE ONLY documentos.versiones_documento
 
 
 --
+-- Name: credenciales fk_credenciales_usuario; Type: FK CONSTRAINT; Schema: seguridad; Owner: -
+--
+
+ALTER TABLE ONLY seguridad.credenciales
+    ADD CONSTRAINT fk_credenciales_usuario FOREIGN KEY (usuario_id) REFERENCES seguridad.usuarios(usuario_id) ON DELETE RESTRICT;
+
+
+--
 -- Name: roles_permisos fk_roles_permisos_permiso; Type: FK CONSTRAINT; Schema: seguridad; Owner: -
 --
 
@@ -2902,6 +3000,14 @@ ALTER TABLE ONLY seguridad.roles_permisos
 
 ALTER TABLE ONLY seguridad.roles_permisos
     ADD CONSTRAINT fk_roles_permisos_rol FOREIGN KEY (rol_id) REFERENCES seguridad.roles(rol_id) ON DELETE CASCADE;
+
+
+--
+-- Name: sesiones fk_sesiones_usuario; Type: FK CONSTRAINT; Schema: seguridad; Owner: -
+--
+
+ALTER TABLE ONLY seguridad.sesiones
+    ADD CONSTRAINT fk_sesiones_usuario FOREIGN KEY (usuario_id) REFERENCES seguridad.usuarios(usuario_id) ON DELETE RESTRICT;
 
 
 --
@@ -3020,4 +3126,5 @@ ALTER TABLE ONLY solicitudes.solicitudes
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20261007000000');
+    ('20261007000000'),
+    ('20261011000000');

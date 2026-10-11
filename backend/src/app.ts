@@ -1,6 +1,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { apiRouter } from './routes/index.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 import { createErrorHandler, CorsOriginError } from './middleware/errorHandler.js';
@@ -29,6 +30,9 @@ export function createApp(config: EnvConfig): express.Express {
       optionsSuccessStatus: 204,
     })
   );
+
+  // Cookie parsing for secure HttpOnly session tokens
+  app.use(cookieParser());
 
   // Body parsing with safe size limits
   app.use(express.json({ limit: '100kb' }));

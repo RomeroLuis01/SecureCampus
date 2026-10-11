@@ -10,6 +10,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { Button, Input, Card, CardBody, Modal } from '../../components'
+import { loginUser } from '../../services'
 
 export const Login: React.FC = () => {
   const navigate = useNavigate()
@@ -23,7 +24,7 @@ export const Login: React.FC = () => {
   const [recoveryEmail, setRecoveryEmail] = useState('')
   const [recoverySent, setRecoverySent] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
@@ -37,26 +38,26 @@ export const Login: React.FC = () => {
       return
     }
 
-    if (password.length < 6) {
-      setError('La contraseña debe contener al menos 6 caracteres.')
-      return
-    }
-
     setIsLoading(true)
 
-    setTimeout(() => {
+    try {
+      const user = await loginUser(identifier.trim(), password)
       setIsLoading(false)
-      // Redirección según rol o identificador
-      if (identifier.toLowerCase().includes('admin')) {
+
+      const roleCodes = user.roles.map((r) => r.codigo)
+      if (roleCodes.includes('ADMINISTRADOR')) {
         navigate('/admin')
-      } else if (identifier.toLowerCase().includes('jefe') || identifier.toLowerCase().includes('martinez')) {
+      } else if (roleCodes.includes('JEFE_CARRERA')) {
         navigate('/jefe_carrera')
-      } else if (identifier.toLowerCase().includes('doc') || identifier.toLowerCase().includes('prof') || identifier.toLowerCase().includes('mendez')) {
+      } else if (roleCodes.includes('PROFESOR')) {
         navigate('/profesor')
       } else {
         navigate('/estudiante')
       }
-    }, 800)
+    } catch (err: any) {
+      setIsLoading(false)
+      setError(err?.message || 'Credenciales inválidas o error de comunicación.')
+    }
   }
 
   const handleQuickLogin = (role: 'estudiante' | 'profesor' | 'admin' | 'jefe_carrera') => {
