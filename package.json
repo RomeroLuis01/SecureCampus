@@ -10,6 +10,7 @@
     "api:build": "tsc -p backend/tsconfig.json",
     "api:start": "node backend/dist/server.js",
     "admin:bootstrap": "tsx scripts/bootstrap-admin.ts",
+    "db:seed": "tsx scripts/seed-dev-users.ts",
     "db:up": "docker compose up -d",
     "db:stop": "docker compose stop",
     "db:migrate": "docker compose run --rm migrate up",

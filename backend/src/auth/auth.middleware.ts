@@ -107,18 +107,33 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 }
 
+const ROLE_ALIASES: Record<string, string> = {
+  admin: 'ADMINISTRADOR',
+  jefe_carrera: 'JEFE_CARRERA',
+  profesor: 'PROFESOR',
+  estudiante: 'ALUMNO',
+};
+
+function normalizeRoleCode(role: string): string {
+  if (!role || typeof role !== 'string') return '';
+  const trimmed = role.trim();
+  return ROLE_ALIASES[trimmed.toLowerCase()] || trimmed.toUpperCase();
+}
+
 /**
  * Role-based authorization middleware.
- * Verifies that the authenticated user possesses at least one of the specified role codes.
+ * Verifies that the authenticated user possesses at least one of the specified role codes or aliases.
  */
 export function requireRoles(...allowedRoles: string[]) {
+  const normalizedAllowed = allowedRoles.map(normalizeRoleCode).filter(Boolean);
+
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
       return next(new AppClientError('No autenticado', 401));
     }
 
-    const userRoles = req.user.roles.map((r) => r.codigo);
-    const hasRole = allowedRoles.some((role) => userRoles.includes(role));
+    const userRoles = req.user.roles.map((r) => normalizeRoleCode(r.codigo)).filter(Boolean);
+    const hasRole = normalizedAllowed.some((role) => userRoles.includes(role));
 
     if (!hasRole) {
       return next(new AppClientError('Acceso denegado: rol insuficiente', 403));

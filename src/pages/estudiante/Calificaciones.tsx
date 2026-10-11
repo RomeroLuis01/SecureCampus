@@ -1,10 +1,13 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   Download,
   FileCheck,
   GraduationCap,
   Award,
   BookOpen,
+  AlertCircle,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react'
 import {
   Card,
@@ -15,26 +18,48 @@ import {
   Table,
 } from '../../components'
 import type { Column } from '../../components'
-import { mockKardexHistory } from '../../services/mockData'
-
-interface SubjectGradeRow {
-  codigo: string
-  asignatura: string
-  profesor: string
-  creditos: number
-  tipoEvaluacion: string
-  calificacionFinal: number
-  estado: 'APROBADA' | 'REPROBADA'
-}
+import {
+  getStudentGrades,
+  type StudentGradesResponse,
+  type SubjectGradeItem,
+} from '../../services'
 
 export const StudentGradesView: React.FC = () => {
+  const [data, setData] = useState<StudentGradesResponse | null>(null)
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState<number>(0)
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
   const [isDownloading, setIsDownloading] = useState(false)
 
-  const currentPeriod = mockKardexHistory[selectedPeriodIndex]
+  const fetchGrades = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await getStudentGrades()
+      setData(response)
+      setSelectedPeriodIndex(0)
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Error de comunicación al consultar calificaciones'
+      setError(message)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchGrades()
+  }, [fetchGrades])
+
+  const currentPeriod =
+    data && data.periodos.length > 0
+      ? data.periodos[selectedPeriodIndex] || data.periodos[0]
+      : null
 
   // Columnas de la tabla con especificaciones de DESIGN.md (11px headers, 13px tabular-nums)
-  const columns: Column<SubjectGradeRow>[] = [
+  const columns: Column<SubjectGradeItem>[] = [
     {
       key: 'codigo',
       title: 'Clave',
@@ -52,7 +77,9 @@ export const StudentGradesView: React.FC = () => {
       render: (row) => (
         <div>
           <span className="font-semibold text-secondary block">{row.asignatura}</span>
-          <span className="text-[11px] text-secondary-slate">{row.profesor}</span>
+          <span className="text-[11px] text-secondary-slate">
+            {row.profesor} • Grupo {row.claveGrupo}
+          </span>
         </div>
       ),
     },
@@ -65,13 +92,13 @@ export const StudentGradesView: React.FC = () => {
       render: (row) => <span className="font-mono tabular-nums">{row.creditos} CR</span>,
     },
     {
-      key: 'tipoEvaluacion',
-      title: 'Tipo Evaluación',
+      key: 'estadoCalificacion',
+      title: 'Evaluación',
       align: 'center',
       width: '130px',
       render: (row) => (
         <span className="text-[11px] text-secondary-slate font-medium">
-          {row.tipoEvaluacion}
+          {row.estadoCalificacion === 'CAPTURADA' ? 'Ordinaria' : 'En Curso'}
         </span>
       ),
     },
@@ -81,30 +108,40 @@ export const StudentGradesView: React.FC = () => {
       isNumeric: true,
       align: 'right',
       width: '140px',
-      render: (row) => (
-        <span
-          className={`font-mono text-sm font-bold tabular-nums ${
-            row.calificacionFinal >= 7.0 ? 'text-secondary' : 'text-academic-danger'
-          }`}
-        >
-          {row.calificacionFinal.toFixed(2)}
-        </span>
-      ),
+      render: (row) => {
+        if (row.calificacionFinal === null) {
+          return <span className="text-xs text-secondary-slate italic">Pendiente</span>
+        }
+        const isPassing = row.estado === 'APROBADA'
+        return (
+          <span
+            className={`font-mono text-sm font-bold tabular-nums ${
+              isPassing ? 'text-secondary' : 'text-academic-danger'
+            }`}
+          >
+            {row.calificacionFinal.toFixed(2)}
+          </span>
+        )
+      },
     },
     {
       key: 'estado',
       title: 'Estatus',
       align: 'center',
       width: '120px',
-      render: (row) => (
-        <Badge
-          variant={row.estado === 'APROBADA' ? 'success' : 'danger'}
-          dot
-          size="sm"
-        >
-          {row.estado}
-        </Badge>
-      ),
+      render: (row) => {
+        const variant =
+          row.estado === 'APROBADA'
+            ? 'success'
+            : row.estado === 'REPROBADA'
+            ? 'danger'
+            : 'warning'
+        return (
+          <Badge variant={variant} dot size="sm">
+            {row.estado}
+          </Badge>
+        )
+      },
     },
   ]
 
@@ -112,10 +149,107 @@ export const StudentGradesView: React.FC = () => {
     setIsDownloading(true)
     setTimeout(() => {
       setIsDownloading(false)
-      alert('Boleta de calificaciones descargada con firma digital SHA256.')
+      alert('Boleta de calificaciones generada con firma digital SHA256.')
     }, 1000)
   }
 
+  // 1. Estado de Carga
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-2 mb-1">
+          <GraduationCap className="w-5 h-5 text-primary" />
+          <h1 className="text-xl font-bold text-secondary tracking-tight">
+            Kárdex e Historial Académico
+          </h1>
+        </div>
+        <Card>
+          <CardBody className="p-12 flex flex-col items-center justify-center text-center space-y-3">
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            <p className="text-sm font-medium text-secondary">
+              Consultando registro oficial de calificaciones en PostgreSQL...
+            </p>
+            <p className="text-xs text-secondary-slate">
+              Validando sesión criptográfica e identidad del estudiante.
+            </p>
+          </CardBody>
+        </Card>
+      </div>
+    )
+  }
+
+  // 2. Estado de Error
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-2 mb-1">
+          <GraduationCap className="w-5 h-5 text-primary" />
+          <h1 className="text-xl font-bold text-secondary tracking-tight">
+            Kárdex e Historial Académico
+          </h1>
+        </div>
+        <Card className="border-red-200 bg-red-50/40">
+          <CardBody className="p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-bold text-red-900">
+                  No fue posible cargar las calificaciones
+                </h3>
+                <p className="text-xs text-red-700 mt-1">{error}</p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={fetchGrades}
+                leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+              >
+                Reintentar Consulta
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+    )
+  }
+
+  // 3. Estado Vacío (Sin registros)
+  if (!currentPeriod || !data || data.periodos.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-2 mb-1">
+          <GraduationCap className="w-5 h-5 text-primary" />
+          <h1 className="text-xl font-bold text-secondary tracking-tight">
+            Kárdex e Historial Académico
+          </h1>
+        </div>
+        <Card>
+          <CardBody className="p-12 flex flex-col items-center justify-center text-center space-y-3">
+            <BookOpen className="w-10 h-10 text-secondary-slate" />
+            <h3 className="text-base font-bold text-secondary">
+              Sin registros de calificaciones disponibles
+            </h3>
+            <p className="text-xs text-secondary-slate max-w-md">
+              Actualmente no cuentas con materias inscritas o actas de evaluación
+              registradas en el sistema escolar para este ciclo.
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={fetchGrades}
+              leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+            >
+              Actualizar
+            </Button>
+          </CardBody>
+        </Card>
+      </div>
+    )
+  }
+
+  // 4. Vista Principal con Datos Reales
   return (
     <div className="space-y-6">
       {/* 1. Header con Filtro por Periodo y Acción de Descarga */}
@@ -128,18 +262,19 @@ export const StudentGradesView: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs text-secondary-slate">
-            Registro oficial y actas de calificaciones avaladas por Servicios Escolares.
+            Registro oficial avalado por Servicios Escolares
+            {data.matricula ? ` • Matrícula: ${data.matricula}` : ''}
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="w-56">
+          <div className="w-64">
             <Select
               value={selectedPeriodIndex}
               onChange={(e) => setSelectedPeriodIndex(Number(e.target.value))}
-              options={mockKardexHistory.map((p, idx) => ({
+              options={data.periodos.map((p, idx) => ({
                 value: idx,
-                label: p.periodo,
+                label: p.nombre,
               }))}
             />
           </div>
@@ -163,7 +298,9 @@ export const StudentGradesView: React.FC = () => {
             <div>
               <span className="text-xs text-secondary-slate block">Promedio del Periodo</span>
               <span className="text-2xl font-bold font-mono text-secondary tabular-nums mt-0.5 block">
-                {currentPeriod.promedioPeriodo.toFixed(2)}
+                {currentPeriod.resumen.promedio !== null
+                  ? currentPeriod.resumen.promedio.toFixed(2)
+                  : 'N/A'}
               </span>
             </div>
             <div className="w-9 h-9 rounded bg-emerald-50 text-academic-success flex items-center justify-center border border-emerald-100">
@@ -177,7 +314,8 @@ export const StudentGradesView: React.FC = () => {
             <div>
               <span className="text-xs text-secondary-slate block">Créditos Aprobados</span>
               <span className="text-2xl font-bold font-mono text-secondary tabular-nums mt-0.5 block">
-                {currentPeriod.creditosAprobados} <span className="text-xs font-normal text-secondary-slate">créditos</span>
+                {currentPeriod.resumen.creditosAprobados}{' '}
+                <span className="text-xs font-normal text-secondary-slate">créditos</span>
               </span>
             </div>
             <div className="w-9 h-9 rounded bg-blue-50 text-primary flex items-center justify-center border border-blue-100">
@@ -191,7 +329,8 @@ export const StudentGradesView: React.FC = () => {
             <div>
               <span className="text-xs text-secondary-slate block">Asignaturas Cursadas</span>
               <span className="text-2xl font-bold font-mono text-secondary tabular-nums mt-0.5 block">
-                {currentPeriod.materias.length} <span className="text-xs font-normal text-secondary-slate">materias</span>
+                {currentPeriod.materias.length}{' '}
+                <span className="text-xs font-normal text-secondary-slate">materias</span>
               </span>
             </div>
             <div className="w-9 h-9 rounded bg-surface-canvas text-secondary-muted flex items-center justify-center border border-border">
@@ -205,11 +344,15 @@ export const StudentGradesView: React.FC = () => {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-secondary">
-            Desglose de Calificaciones Oficiales • {currentPeriod.periodo}
+            Desglose de Calificaciones Oficiales • {currentPeriod.nombre}
           </h2>
           <span className="text-xs text-secondary-slate">
             Estatus:{' '}
-            <strong className="text-academic-success">
+            <strong
+              className={
+                currentPeriod.esActivo ? 'text-academic-success' : 'text-secondary'
+              }
+            >
               {currentPeriod.esActivo ? 'Periodo en Curso' : 'Actas Cerradas'}
             </strong>
           </span>
@@ -218,7 +361,7 @@ export const StudentGradesView: React.FC = () => {
         <Table
           columns={columns}
           data={currentPeriod.materias}
-          rowKey={(row) => row.codigo}
+          rowKey={(row) => row.inscripcionId}
           emptyMessage="No se encontraron registros de calificaciones para este periodo."
         />
       </div>
@@ -227,10 +370,12 @@ export const StudentGradesView: React.FC = () => {
       <div className="p-4 bg-surface-lowest border border-border rounded-lg text-xs text-secondary-slate flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-academic-success inline-block" />
-          <span>Documento expedido con validez oficial conforme al Reglamento de Control Escolar.</span>
+          <span>
+            Documento expedido con validez oficial conforme al Reglamento de Control Escolar de SecureCampus.
+          </span>
         </div>
         <div className="text-[11px] font-mono text-secondary-muted">
-          Cadena Original: SC-CERT-2026-99014-VAL
+          Cadena Original: SC-CERT-2026-VAL-{currentPeriod.codigo}
         </div>
       </div>
     </div>

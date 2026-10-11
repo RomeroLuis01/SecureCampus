@@ -15,9 +15,31 @@ import {
 } from 'lucide-react'
 import { Card, Button, Badge, Modal, Input } from '../../components'
 import { mockJefeCareerProfile } from '../../services/mockData'
+import { useAuth } from '../../context/AuthContext'
 
 export const JefeProfileView: React.FC = () => {
-  const [profile, setProfile] = useState(mockJefeCareerProfile)
+  const { user } = useAuth()
+
+  const [profile, setProfile] = useState(() => ({
+    ...mockJefeCareerProfile,
+    titularNombre: user?.nombreCompleto || mockJefeCareerProfile.titularNombre,
+    email: user?.correo || mockJefeCareerProfile.email,
+    carrera: user?.carreraNombre || mockJefeCareerProfile.carrera,
+    telefono: user?.telefono || mockJefeCareerProfile.telefono,
+  }))
+
+  React.useEffect(() => {
+    if (user) {
+      setProfile((prev) => ({
+        ...prev,
+        titularNombre: user.nombreCompleto || prev.titularNombre,
+        email: user.correo || prev.email,
+        carrera: user.carreraNombre || prev.carrera,
+        telefono: user.telefono || prev.telefono,
+      }))
+    }
+  }, [user])
+
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editPhone, setEditPhone] = useState(profile.telefono)
   const [editExtension, setEditExtension] = useState(profile.extension)

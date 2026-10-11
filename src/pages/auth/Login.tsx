@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Lock,
   Mail,
@@ -10,10 +10,15 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { Button, Input, Card, CardBody, Modal } from '../../components'
-import { loginUser } from '../../services'
+import { useAuth } from '../../context/AuthContext'
+import { getDefaultRouteForUser } from '../../utils/roles'
+import { sanitizeReturnUrl } from '../../utils/url'
 
 export const Login: React.FC = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const { login, user, status, error: authError } = useAuth()
+
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -23,6 +28,18 @@ export const Login: React.FC = () => {
   const [showRecoveryModal, setShowRecoveryModal] = useState(false)
   const [recoveryEmail, setRecoveryEmail] = useState('')
   const [recoverySent, setRecoverySent] = useState(false)
+
+  // Redirigir si el usuario ya cuenta con una sesión válida
+  useEffect(() => {
+    if (status === 'authenticated' && user) {
+      const returnUrlParam = searchParams.get('returnUrl')
+      const safeTarget = sanitizeReturnUrl(returnUrlParam, '')
+      const destination = safeTarget || getDefaultRouteForUser(user)
+      if (destination && destination !== '/login') {
+        navigate(destination, { replace: true })
+      }
+    }
+  }, [status, user, navigate, searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,42 +58,25 @@ export const Login: React.FC = () => {
     setIsLoading(true)
 
     try {
-      const user = await loginUser(identifier.trim(), password)
+      const authenticatedUser = await login(identifier.trim(), password)
       setIsLoading(false)
 
-      const roleCodes = user.roles.map((r) => r.codigo)
-      if (roleCodes.includes('ADMINISTRADOR')) {
-        navigate('/admin')
-      } else if (roleCodes.includes('JEFE_CARRERA')) {
-        navigate('/jefe_carrera')
-      } else if (roleCodes.includes('PROFESOR')) {
-        navigate('/profesor')
+      const returnUrlParam = searchParams.get('returnUrl')
+      const safeTarget = sanitizeReturnUrl(returnUrlParam, '')
+
+      if (safeTarget) {
+        navigate(safeTarget, { replace: true })
       } else {
-        navigate('/estudiante')
+        const destination = getDefaultRouteForUser(authenticatedUser)
+        if (destination && destination !== '/login') {
+          navigate(destination, { replace: true })
+        } else {
+          setError('Su cuenta no cuenta con roles activos para acceder a ningún portal institucional.')
+        }
       }
     } catch (err: any) {
       setIsLoading(false)
       setError(err?.message || 'Credenciales inválidas o error de comunicación.')
-    }
-  }
-
-  const handleQuickLogin = (role: 'estudiante' | 'profesor' | 'admin' | 'jefe_carrera') => {
-    if (role === 'admin') {
-      setIdentifier('admin@securecampus.edu')
-      setPassword('AdminSecure2026!')
-      navigate('/admin')
-    } else if (role === 'jefe_carrera') {
-      setIdentifier('a.martinez@securecampus.edu')
-      setPassword('JefeSecure2026!')
-      navigate('/jefe_carrera')
-    } else if (role === 'profesor') {
-      setIdentifier('DOC-8821')
-      setPassword('ProfesorSecure2026!')
-      navigate('/profesor')
-    } else {
-      setIdentifier('202301042')
-      setPassword('EstudianteSecure2026!')
-      navigate('/estudiante')
     }
   }
 
@@ -87,6 +87,8 @@ export const Login: React.FC = () => {
     }
     setRecoverySent(true)
   }
+
+  const activeErrorMessage = error || authError
 
   return (
     <div className="w-full space-y-6">
@@ -104,10 +106,10 @@ export const Login: React.FC = () => {
         </div>
 
         <CardBody className="p-6 sm:p-8">
-          {error && (
+          {activeErrorMessage && (
             <div className="mb-5 p-3 rounded-md bg-academic-danger-bg border border-academic-danger-border flex items-start gap-2.5 text-academic-danger-text text-xs">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{error}</span>
+              <span>{activeErrorMessage}</span>
             </div>
           )}
 
@@ -177,47 +179,6 @@ export const Login: React.FC = () => {
               Iniciar Sesión
             </Button>
           </form>
-
-          {/* Accesos Rápidos de Demostración */}
-          <div className="mt-8 pt-6 border-t border-border-subtle">
-            <span className="text-[11px] uppercase font-bold text-secondary-slate tracking-wider block text-center mb-3">
-              Acceso Rápido de Demostración
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full justify-center text-[11px] px-1"
-                onClick={() => handleQuickLogin('estudiante')}
-              >
-                Estudiante
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full justify-center text-[11px] px-1"
-                onClick={() => handleQuickLogin('profesor')}
-              >
-                Profesor
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full justify-center text-[11px] px-1"
-                onClick={() => handleQuickLogin('jefe_carrera')}
-              >
-                Jefe Carrera
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full justify-center text-[11px] px-1"
-                onClick={() => handleQuickLogin('admin')}
-              >
-                Admin
-              </Button>
-            </div>
-          </div>
         </CardBody>
       </Card>
 

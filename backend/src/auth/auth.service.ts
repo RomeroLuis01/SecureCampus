@@ -9,6 +9,12 @@ export interface AuthUserProfile {
   nombreCompleto: string;
   correo: string;
   estado: string;
+  telefono?: string | null;
+  curp?: string | null;
+  matricula?: string | null;
+  numeroEmpleado?: string | null;
+  carreraCodigo?: string | null;
+  carreraNombre?: string | null;
   roles: Array<{ rolId: string; codigo: string; carreraId: string | null }>;
   permisos: string[];
 }
@@ -144,10 +150,33 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
     nombre_completo: string;
     correo: string;
     estado: string;
+    telefono: string | null;
+    curp: string | null;
+    matricula: string | null;
+    numero_empleado: string | null;
+    carrera_codigo: string | null;
+    carrera_nombre: string | null;
   }>(
-    `SELECT u.usuario_id, p.persona_id, p.nombre_completo, p.correo, u.estado
+    `SELECT 
+       u.usuario_id, 
+       p.persona_id, 
+       p.nombre_completo, 
+       p.correo, 
+       u.estado,
+       p.telefono,
+       p.curp,
+       a.matricula,
+       pr.numero_empleado,
+       COALESCE(c_ur.codigo, c_ac.codigo) AS carrera_codigo,
+       COALESCE(c_ur.nombre, c_ac.nombre) AS carrera_nombre
      FROM seguridad.usuarios u
      JOIN nucleo.personas p ON p.persona_id = u.persona_id
+     LEFT JOIN academico.alumnos a ON a.persona_id = p.persona_id
+     LEFT JOIN academico.profesores pr ON pr.persona_id = p.persona_id
+     LEFT JOIN seguridad.usuarios_roles ur ON ur.usuario_id = u.usuario_id AND ur.carrera_id IS NOT NULL
+     LEFT JOIN nucleo.carreras c_ur ON c_ur.carrera_id = ur.carrera_id
+     LEFT JOIN academico.alumnos_carreras ac ON ac.alumno_id = a.alumno_id AND ac.fecha_fin IS NULL
+     LEFT JOIN nucleo.carreras c_ac ON c_ac.carrera_id = ac.carrera_id
      WHERE u.usuario_id = $1`,
     [usuarioId]
   );
@@ -192,6 +221,12 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
     nombreCompleto: u.nombre_completo,
     correo: u.correo,
     estado: u.estado,
+    telefono: u.telefono ?? null,
+    curp: u.curp ?? null,
+    matricula: u.matricula ?? null,
+    numeroEmpleado: u.numero_empleado ?? null,
+    carreraCodigo: u.carrera_codigo ?? null,
+    carreraNombre: u.carrera_nombre ?? null,
     roles: Array.from(rolesMap.values()),
     permisos: Array.from(permisosSet),
   };

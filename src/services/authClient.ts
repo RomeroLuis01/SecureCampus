@@ -10,6 +10,12 @@ export interface AuthUser {
   nombreCompleto: string;
   correo: string;
   estado: string;
+  telefono?: string | null;
+  curp?: string | null;
+  matricula?: string | null;
+  numeroEmpleado?: string | null;
+  carreraCodigo?: string | null;
+  carreraNombre?: string | null;
   roles: UserRole[];
   permisos: string[];
 }
@@ -48,30 +54,53 @@ export async function loginUser(identifier: string, password: string): Promise<A
 }
 
 export async function getSessionUser(): Promise<AuthUser | null> {
-  try {
-    const response = await fetch(`${API_BASE}/auth/me`, {
-      method: 'GET',
-      credentials: 'include',
-    });
+  const response = await fetch(`${API_BASE}/auth/me`, {
+    method: 'GET',
+    credentials: 'include',
+  });
 
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    return data.user as AuthUser;
-  } catch {
+  // 401 Unauthorized: Valid confirmation from server that no session exists
+  if (response.status === 401) {
     return null;
   }
+
+  // Any non-200 response (403, 500, etc.) is an explicit operational error
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const errorMsg = data?.error?.message || `Error del servidor (${response.status})`;
+    throw new AuthApiError(errorMsg, response.status);
+  }
+
+  const data = await response.json();
+  return data.user as AuthUser;
 }
 
-export async function logoutUser(): Promise<void> {
+export async function logoutUser(): Promise<{ success: boolean; isAlreadyExpired: boolean }> {
   try {
-    await fetch(`${API_BASE}/auth/logout`, {
+    const originHeader = typeof window !== 'undefined' && window.location ? window.location.origin : undefined;
+    const response = await fetch(`${API_BASE}/auth/logout`, {
       method: 'POST',
       credentials: 'include',
+      headers: originHeader ? { Origin: originHeader } : {},
     });
+
+    if (response.status === 401) {
+      // Session was already expired or revoked on server
+      return { success: true, isAlreadyExpired: true };
+    }
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      const errorMsg = data?.error?.message || 'Error durante cierre de sesión';
+      throw new AuthApiError(errorMsg, response.status);
+    }
+
+    return { success: true, isAlreadyExpired: false };
   } catch (err) {
-    console.error('Error durante logout:', err);
+    if (err instanceof AuthApiError) {
+      throw err;
+    }
+    const message = err instanceof Error ? err.message : 'Error de comunicación durante logout';
+    throw new AuthApiError(message, 0);
   }
 }

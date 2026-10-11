@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { Sidebar, Topbar } from '../components'
 import type { NavItem } from '../components'
+import { useAuth } from '../context/AuthContext'
 
 export interface DashboardLayoutProps {
   role?: 'estudiante' | 'admin' | 'profesor' | 'jefe_carrera'
@@ -21,6 +22,7 @@ export interface DashboardLayoutProps {
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role = 'estudiante' }) => {
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
+  const { user, logout } = useAuth()
 
   // Navegación según el rol activo
   const navigationByRole: Record<string, { roleName: string; roleTitle: string; items: NavItem[] }> = {
@@ -140,6 +142,20 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role = 'estudi
 
   const currentConfig = navigationByRole[role] || navigationByRole.estudiante
 
+  // Filtrar portales alternativos estrictamente según los roles vigentes del usuario
+  const userRoles = user?.roles?.map((r) => r.codigo) || []
+  const authorizedPortals = [
+    { code: 'ALUMNO', path: '/estudiante', label: 'Estudiante', active: role === 'estudiante' },
+    { code: 'PROFESOR', path: '/profesor', label: 'Profesor', active: role === 'profesor' },
+    { code: 'JEFE_CARRERA', path: '/jefe_carrera', label: 'Jefe de Carrera', active: role === 'jefe_carrera' },
+    { code: 'ADMINISTRADOR', path: '/admin', label: 'Administrador', active: role === 'admin' },
+  ].filter((p) => userRoles.includes(p.code))
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login', { replace: true })
+  }
+
   return (
     <div className="min-h-screen bg-surface-canvas flex font-sans">
       {/* Barra de Navegación Lateral */}
@@ -160,28 +176,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role = 'estudi
       {/* Área de Visualización */}
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar
-          userName={
-            role === 'estudiante'
-              ? 'Valeria S. Morales Rivas'
-              : role === 'profesor'
-              ? 'Dr. Alejandro Méndez Rosas'
-              : role === 'jefe_carrera'
-              ? 'Mtro. Alejandro Martínez Solís'
-              : 'Mtro. Roberto Morales Salazar'
-          }
-          userEmail={
-            role === 'estudiante'
-              ? 'v.morales@securecampus.edu'
-              : role === 'profesor'
-              ? 'a.mendez@securecampus.edu'
-              : role === 'jefe_carrera'
-              ? 'a.martinez@securecampus.edu'
-              : 'r.morales@securecampus.edu'
-          }
+          userName={user?.nombreCompleto || 'Usuario Institucional'}
+          userEmail={user?.correo || 'usuario@securecampus.edu'}
           userRole={currentConfig.roleName}
           term="Periodo 2026-B"
           onSearch={(query) => console.log('Búsqueda:', query)}
-          onLogout={() => navigate('/login')}
+          onLogout={handleLogout}
         />
 
         <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
@@ -190,36 +190,24 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role = 'estudi
 
         <footer className="border-t border-border bg-surface-lowest py-4 px-6 text-center text-xs text-secondary-slate flex flex-col sm:flex-row items-center justify-between gap-3">
           <span>SecureCampus Platform • Entorno Académico Seguro</span>
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-secondary-muted">Cambiar portal:</span>
-            <button
-              onClick={() => navigate('/estudiante')}
-              className={`hover:underline font-medium ${role === 'estudiante' ? 'text-secondary font-bold underline' : 'text-primary'}`}
-            >
-              Estudiante
-            </button>
-            <span className="text-border">•</span>
-            <button
-              onClick={() => navigate('/profesor')}
-              className={`hover:underline font-medium ${role === 'profesor' ? 'text-secondary font-bold underline' : 'text-primary'}`}
-            >
-              Profesor
-            </button>
-            <span className="text-border">•</span>
-            <button
-              onClick={() => navigate('/jefe_carrera')}
-              className={`hover:underline font-medium ${role === 'jefe_carrera' ? 'text-secondary font-bold underline' : 'text-primary'}`}
-            >
-              Jefe de Carrera
-            </button>
-            <span className="text-border">•</span>
-            <button
-              onClick={() => navigate('/admin')}
-              className={`hover:underline font-medium ${role === 'admin' ? 'text-secondary font-bold underline' : 'text-primary'}`}
-            >
-              Administrador
-            </button>
-          </div>
+          {authorizedPortals.length > 1 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-secondary-muted">Cambiar portal:</span>
+              {authorizedPortals.map((portal, index) => (
+                <React.Fragment key={portal.path}>
+                  {index > 0 && <span className="text-border">•</span>}
+                  <button
+                    onClick={() => navigate(portal.path)}
+                    className={`hover:underline font-medium ${
+                      portal.active ? 'text-secondary font-bold underline' : 'text-primary'
+                    }`}
+                  >
+                    {portal.label}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+          )}
         </footer>
       </div>
     </div>

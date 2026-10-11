@@ -19,9 +19,45 @@ import {
   Input,
 } from '../../components'
 import { mockStudentProfile } from '../../services/mockData'
+import { useAuth } from '../../context/AuthContext'
 
 export const StudentProfileView: React.FC = () => {
-  const [profile, setProfile] = useState(mockStudentProfile)
+  const { user } = useAuth()
+
+  const [profile, setProfile] = useState(() => {
+    const rawNombre = user?.nombreCompleto || ''
+    const parts = rawNombre.trim().split(' ')
+    const nombre = parts[0] || mockStudentProfile.nombre
+    const apellidos = parts.slice(1).join(' ') || mockStudentProfile.apellidos
+
+    return {
+      ...mockStudentProfile,
+      nombre: user?.nombreCompleto ? nombre : mockStudentProfile.nombre,
+      apellidos: user?.nombreCompleto ? apellidos : mockStudentProfile.apellidos,
+      email: user?.correo || mockStudentProfile.email,
+      matricula: user?.matricula || mockStudentProfile.matricula,
+      carrera: user?.carreraNombre || mockStudentProfile.carrera,
+      curp: user?.curp || mockStudentProfile.curp,
+      telefono: user?.telefono || mockStudentProfile.telefono,
+    }
+  })
+
+  React.useEffect(() => {
+    if (user) {
+      const parts = (user.nombreCompleto || '').trim().split(' ')
+      setProfile((prev) => ({
+        ...prev,
+        nombre: user.nombreCompleto ? parts[0] : prev.nombre,
+        apellidos: user.nombreCompleto ? parts.slice(1).join(' ') : prev.apellidos,
+        email: user.correo || prev.email,
+        matricula: user.matricula || prev.matricula,
+        carrera: user.carreraNombre || prev.carrera,
+        curp: user.curp || prev.curp,
+        telefono: user.telefono || prev.telefono,
+      }))
+    }
+  }, [user])
+
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
     telefono: profile.telefono,

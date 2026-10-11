@@ -23,8 +23,10 @@ import {
 import type { Column } from '../../components'
 import { mockAdminUsers, mockAuditLogs } from '../../services/mockData'
 import type { SystemUser } from '../../services/mockData'
+import { useAuth } from '../../context/AuthContext'
 
 export const AdminDashboard: React.FC = () => {
+  const { user } = useAuth()
   const [users, setUsers] = useState<SystemUser[]>(mockAdminUsers)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedRole, setSelectedRole] = useState('ALL')
@@ -192,7 +194,7 @@ export const AdminDashboard: React.FC = () => {
             </Badge>
           </div>
           <h1 className="text-xl font-bold text-secondary tracking-tight">
-            Portal del Administrador General
+            Portal del Administrador General{user?.nombreCompleto ? ` — ${user.nombreCompleto}` : ''}
           </h1>
           <p className="text-xs text-secondary-slate mt-0.5">
             Supervisión institucional, control de identidades y bitácora de integridad del sistema.

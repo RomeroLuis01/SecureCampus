@@ -17,9 +17,31 @@ import {
 } from 'lucide-react'
 import { Card, Button, Badge, Modal, Input } from '../../components'
 import { mockTeacherProfile, mockTeacherGroups } from '../../services/mockData'
+import { useAuth } from '../../context/AuthContext'
 
 export const TeacherProfileView: React.FC = () => {
-  const [profile, setProfile] = useState(mockTeacherProfile)
+  const { user } = useAuth()
+
+  const [profile, setProfile] = useState(() => ({
+    ...mockTeacherProfile,
+    nombre: user?.nombreCompleto || mockTeacherProfile.nombre,
+    email: user?.correo || mockTeacherProfile.email,
+    nomina: user?.numeroEmpleado || mockTeacherProfile.nomina,
+    telefono: user?.telefono || mockTeacherProfile.telefono,
+  }))
+
+  React.useEffect(() => {
+    if (user) {
+      setProfile((prev) => ({
+        ...prev,
+        nombre: user.nombreCompleto || prev.nombre,
+        email: user.correo || prev.email,
+        nomina: user.numeroEmpleado || prev.nomina,
+        telefono: user.telefono || prev.telefono,
+      }))
+    }
+  }, [user])
+
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editPhone, setEditPhone] = useState(profile.telefono)
   const [editEmail, setEditEmail] = useState(profile.email)
