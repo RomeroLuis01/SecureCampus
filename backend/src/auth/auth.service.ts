@@ -17,6 +17,8 @@ export interface AuthUserProfile {
   carreraNombre?: string | null;
   roles: Array<{ rolId: string; codigo: string; carreraId: string | null }>;
   permisos: string[];
+  estadoCredencial?: string | null;
+  bloqueadoHasta?: Date | null;
 }
 
 export interface LoginResult {
@@ -156,6 +158,8 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
     numero_empleado: string | null;
     carrera_codigo: string | null;
     carrera_nombre: string | null;
+    estado_credencial: string | null;
+    bloqueado_hasta: Date | null;
   }>(
     `SELECT 
        u.usuario_id, 
@@ -168,9 +172,12 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
        a.matricula,
        pr.numero_empleado,
        COALESCE(c_ur.codigo, c_ac.codigo) AS carrera_codigo,
-       COALESCE(c_ur.nombre, c_ac.nombre) AS carrera_nombre
+       COALESCE(c_ur.nombre, c_ac.nombre) AS carrera_nombre,
+       c.estado AS estado_credencial,
+       c.bloqueado_hasta
      FROM seguridad.usuarios u
      JOIN nucleo.personas p ON p.persona_id = u.persona_id
+     LEFT JOIN seguridad.credenciales c ON c.usuario_id = u.usuario_id
      LEFT JOIN academico.alumnos a ON a.persona_id = p.persona_id
      LEFT JOIN academico.profesores pr ON pr.persona_id = p.persona_id
      LEFT JOIN seguridad.usuarios_roles ur ON ur.usuario_id = u.usuario_id AND ur.carrera_id IS NOT NULL
@@ -229,6 +236,8 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
     carreraNombre: u.carrera_nombre ?? null,
     roles: Array.from(rolesMap.values()),
     permisos: Array.from(permisosSet),
+    estadoCredencial: u.estado_credencial ?? null,
+    bloqueadoHasta: u.bloqueado_hasta ? new Date(u.bloqueado_hasta) : null,
   };
 }
 

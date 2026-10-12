@@ -57,7 +57,7 @@ export function sanitizeConnectionUrl(raw: string): string {
  * Checks whether an IPv4/IPv6 string is a loopback or private network address (RFC 1918 / RFC 4193).
  */
 export function isPrivateOrLoopbackIp(ip: string): boolean {
-  const normalized = ip.replace(/^::ffff:/, '').trim();
+  const normalized = ip.replace(/^::ffff:/, '').replace(/\/\d+$/, '').trim();
 
   // Loopback
   if (normalized === '127.0.0.1' || normalized === '::1') {
@@ -452,8 +452,8 @@ export async function seedDevUsers(options?: {
     // 5.2 Periodos Académicos (sin traslape temporal)
     const perPrevioRes = await client.query<{ periodo_academico_id: string }>(
       `INSERT INTO academico.periodos_academicos (codigo, nombre, fecha_inicio, fecha_fin, estado)
-       VALUES ('2026-A', 'Periodo 2026-A (Semestre previo)', '2026-01-15', '2026-06-30', 'CERRADO')
-       ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre
+       VALUES ('2026-A', 'Periodo 2026-A (Semestre previo)', '2026-01-15', '2026-06-30', 'PLANEADO')
+       ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre, estado = 'PLANEADO'
        RETURNING periodo_academico_id`
     );
     const periodoPrevioId = perPrevioRes.rows[0]?.periodo_academico_id;
@@ -520,8 +520,8 @@ export async function seedDevUsers(options?: {
       const gPrevioId = gPrevio.rows[0]?.grupo_id;
       if (gPrevioId) {
         await client.query(
-          `INSERT INTO academico.asignaciones_profesor_grupo (grupo_id, profesor_id, rol)
-           VALUES ($1, $2, 'TITULAR')
+          `INSERT INTO academico.asignaciones_profesor_grupo (grupo_id, profesor_id)
+           VALUES ($1, $2)
            ON CONFLICT DO NOTHING`,
           [gPrevioId, profesorId]
         );
@@ -542,6 +542,10 @@ export async function seedDevUsers(options?: {
           );
         }
       }
+      await client.query(
+        `UPDATE academico.periodos_academicos SET estado = 'CERRADO' WHERE periodo_academico_id = $1`,
+        [periodoPrevioId]
+      );
     }
 
     if (periodoActivoId && alumnoId && profesorId) {
@@ -557,8 +561,8 @@ export async function seedDevUsers(options?: {
         const g1Id = g1.rows[0]?.grupo_id;
         if (g1Id) {
           await client.query(
-            `INSERT INTO academico.asignaciones_profesor_grupo (grupo_id, profesor_id, rol)
-             VALUES ($1, $2, 'TITULAR')
+            `INSERT INTO academico.asignaciones_profesor_grupo (grupo_id, profesor_id)
+             VALUES ($1, $2)
              ON CONFLICT DO NOTHING`,
             [g1Id, profesorId]
           );
@@ -593,8 +597,8 @@ export async function seedDevUsers(options?: {
         const g3Id = g3.rows[0]?.grupo_id;
         if (g3Id) {
           await client.query(
-            `INSERT INTO academico.asignaciones_profesor_grupo (grupo_id, profesor_id, rol)
-             VALUES ($1, $2, 'TITULAR')
+            `INSERT INTO academico.asignaciones_profesor_grupo (grupo_id, profesor_id)
+             VALUES ($1, $2)
              ON CONFLICT DO NOTHING`,
             [g3Id, profesorId]
           );

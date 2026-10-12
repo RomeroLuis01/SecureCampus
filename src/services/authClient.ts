@@ -77,11 +77,17 @@ export async function getSessionUser(): Promise<AuthUser | null> {
 
 export async function logoutUser(): Promise<{ success: boolean; isAlreadyExpired: boolean }> {
   try {
-    const originHeader = typeof window !== 'undefined' && window.location ? window.location.origin : undefined;
+    // In browsers, 'Origin' is set automatically by the engine on POST and cannot/should not be set manually.
+    const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+    const headers: Record<string, string> = {};
+    if (!isBrowser && typeof window !== 'undefined' && window.location?.origin) {
+      headers['Origin'] = window.location.origin;
+    }
+
     const response = await fetch(`${API_BASE}/auth/logout`, {
       method: 'POST',
       credentials: 'include',
-      headers: originHeader ? { Origin: originHeader } : {},
+      headers,
     });
 
     if (response.status === 401) {

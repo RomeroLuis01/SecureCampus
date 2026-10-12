@@ -42,6 +42,15 @@ export const TeacherProfileView: React.FC = () => {
     }
   }, [user])
 
+  // Iniciales dinámicas del docente
+  const initials = React.useMemo(() => {
+    const displayName = user?.nombreCompleto || profile.nombre
+    if (!displayName) return 'DOC'
+    const parts = displayName.trim().split(/\s+/).filter(Boolean)
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase()
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  }, [user?.nombreCompleto, profile.nombre])
+
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editPhone, setEditPhone] = useState(profile.telefono)
   const [editEmail, setEditEmail] = useState(profile.email)
@@ -121,19 +130,19 @@ export const TeacherProfileView: React.FC = () => {
           <Card className="border border-border shadow-sm">
             <div className="p-6 text-center space-y-4">
               <div className="relative inline-block">
-                <div className="w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-primary font-bold text-3xl mx-auto shadow-inner">
-                  AM
+                <div className="w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-primary font-bold text-3xl mx-auto shadow-inner font-mono">
+                  {initials}
                 </div>
                 <span className="absolute bottom-0 right-0 bg-emerald-600 text-white w-7 h-7 flex items-center justify-center rounded-full border-2 border-white shadow-sm" title="Verificado DGP">
                   <ShieldCheck className="w-4 h-4 shrink-0" />
                 </span>
               </div>
               <div>
-                <h2 className="text-lg font-bold text-secondary">{profile.nombre} {profile.apellidos}</h2>
+                <h2 className="text-lg font-bold text-secondary">{user?.nombreCompleto || `${profile.nombre} ${profile.apellidos}`}</h2>
                 <p className="text-xs text-secondary-slate font-medium">{profile.categoria}</p>
                 <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface-canvas rounded text-xs font-mono font-semibold text-primary border border-border-subtle leading-none">
                   <Hash className="w-3.5 h-3.5 shrink-0" />
-                  Nómina: {profile.nomina}
+                  Nómina: {user?.numeroEmpleado || profile.nomina}
                 </div>
               </div>
 
@@ -243,6 +252,9 @@ export const TeacherProfileView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-primary" />
                 <h3 className="text-sm font-bold text-secondary">Cátedras Asignadas en el Periodo Activo</h3>
+                <span className="text-[10px] text-secondary-muted font-mono bg-surface-canvas px-1.5 py-0.5 rounded border border-border-subtle">
+                  Demostrativo
+                </span>
               </div>
               <span className="text-xs font-mono font-medium text-secondary-slate">3 Grupos Oficiales</span>
             </div>

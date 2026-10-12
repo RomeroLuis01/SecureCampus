@@ -295,4 +295,132 @@ describe('session.service (Unit Tests)', () => {
     expect(result.isValid).toBe(false);
     expect(result.reason).toBe('EXPIRED_ABSOLUTE');
   });
+
+  it('12. deterministic boundary: session at exactly 60 minutes of inactivity remains valid', async () => {
+    const fixedNow = 1_700_000_000_000;
+    const exactly60MinAgo = new Date(fixedNow - 60 * 60 * 1000); // exactly 3,600,000 ms
+
+    vi.spyOn(databaseModule, 'query')
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            sesion_id: 'session-boundary-valid',
+            usuario_id: 'user-boundary-valid',
+            creado_en: exactly60MinAgo,
+            ultimo_acceso_en: exactly60MinAgo,
+            expira_en: new Date(fixedNow + 4 * 3600 * 1000),
+            revocado_en: null,
+            db_now: new Date(fixedNow),
+          },
+        ],
+        rowCount: 1,
+      } as unknown as QueryResult)
+      .mockResolvedValueOnce({
+        rows: [{ sesion_id: 'session-boundary-valid' }],
+        rowCount: 1,
+      } as unknown as QueryResult);
+
+    const result = await validateSession('boundary-valid-token');
+    expect(result.isValid).toBe(true);
+    expect(result.sesionId).toBe('session-boundary-valid');
+  });
+
+  it('13. deterministic boundary: session at 60 minutes + 1 ms of inactivity is expired (EXPIRED_IDLE)', async () => {
+    const fixedNow = 1_700_000_000_000;
+    const over60MinAgo = new Date(fixedNow - (60 * 60 * 1000 + 1)); // 3,600,001 ms
+
+    vi.spyOn(databaseModule, 'query').mockResolvedValueOnce({
+      rows: [
+        {
+          sesion_id: 'session-boundary-idle',
+          usuario_id: 'user-boundary-idle',
+          creado_en: over60MinAgo,
+          ultimo_acceso_en: over60MinAgo,
+          expira_en: new Date(fixedNow + 4 * 3600 * 1000),
+          revocado_en: null,
+          db_now: new Date(fixedNow),
+        },
+      ],
+      rowCount: 1,
+    } as unknown as QueryResult);
+
+    const result = await validateSession('boundary-idle-token');
+    expect(result.isValid).toBe(false);
+    expect(result.reason).toBe('EXPIRED_IDLE');
+  });
+
+  it('14. deterministic boundary: session at exactly expira_en is expired (EXPIRED_ABSOLUTE)', async () => {
+    const fixedNow = 1_700_000_000_000;
+    const recentAccess = new Date(fixedNow - 60 * 1000); // Active 1 min ago
+    const exactExpiration = new Date(fixedNow); // now === expira_en
+
+    vi.spyOn(databaseModule, 'query').mockResolvedValueOnce({
+      rows: [
+        {
+          sesion_id: 'session-boundary-abs',
+          usuario_id: 'user-boundary-abs',
+          creado_en: new Date(fixedNow - 8 * 3600 * 1000),
+          ultimo_acceso_en: recentAccess,
+          expira_en: exactExpiration,
+          revocado_en: null,
+          db_now: new Date(fixedNow),
+        },
+      ],
+      rowCount: 1,
+    } as unknown as QueryResult);
+
+    const result = await validateSession('boundary-abs-token');
+    expect(result.isValid).toBe(false);
+    expect(result.reason).toBe('EXPIRED_ABSOLUTE');
+  });
+
+  it('15. deterministic boundary: session at expira_en - 1 ms remains valid', async () => {
+    const fixedNow = 1_700_000_000_000;
+    const recentAccess = new Date(fixedNow - 60 * 1000); // Active 1 min ago
+    const oneMsBeforeExpiration = new Date(fixedNow + 1);
+
+    vi.spyOn(databaseModule, 'query').mockResolvedValueOnce({
+      rows: [
+        {
+          sesion_id: 'session-boundary-not-abs',
+          usuario_id: 'user-boundary-not-abs',
+          creado_en: new Date(fixedNow - 8 * 3600 * 1000 + 1),
+          ultimo_acceso_en: recentAccess,
+          expira_en: oneMsBeforeExpiration,
+          revocado_en: null,
+          db_now: new Date(fixedNow),
+        },
+      ],
+      rowCount: 1,
+    } as unknown as QueryResult);
+
+    const result = await validateSession('boundary-not-abs-token');
+    expect(result.isValid).toBe(true);
+    expect(result.sesionId).toBe('session-boundary-not-abs');
+  });
+
+  it('16. interaction: highly active user at 8h absolute ceiling is strictly rejected with EXPIRED_ABSOLUTE', async () => {
+    const fixedNow = 1_700_000_000_000;
+    const veryRecentAccess = new Date(fixedNow - 10 * 1000); // 10 seconds ago (definitely not idle)
+    const eightHoursPast = new Date(fixedNow - 1); // absolute expiration passed by 1 ms
+
+    vi.spyOn(databaseModule, 'query').mockResolvedValueOnce({
+      rows: [
+        {
+          sesion_id: 'session-active-but-abs-expired',
+          usuario_id: 'user-active-but-abs-expired',
+          creado_en: new Date(fixedNow - 8 * 3600 * 1000 - 1),
+          ultimo_acceso_en: veryRecentAccess,
+          expira_en: eightHoursPast,
+          revocado_en: null,
+          db_now: new Date(fixedNow),
+        },
+      ],
+      rowCount: 1,
+    } as unknown as QueryResult);
+
+    const result = await validateSession('active-but-abs-token');
+    expect(result.isValid).toBe(false);
+    expect(result.reason).toBe('EXPIRED_ABSOLUTE');
+  });
 });

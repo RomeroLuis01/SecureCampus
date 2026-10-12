@@ -26,29 +26,29 @@ export const StudentProfileView: React.FC = () => {
 
   const [profile, setProfile] = useState(() => {
     const rawNombre = user?.nombreCompleto || ''
-    const parts = rawNombre.trim().split(' ')
-    const nombre = parts[0] || mockStudentProfile.nombre
-    const apellidos = parts.slice(1).join(' ') || mockStudentProfile.apellidos
+    const parts = rawNombre.trim().split(/\s+/).filter(Boolean)
+    const nombre = parts[0] || ''
+    const apellidos = parts.slice(1).join(' ') || ''
 
     return {
       ...mockStudentProfile,
-      nombre: user?.nombreCompleto ? nombre : mockStudentProfile.nombre,
-      apellidos: user?.nombreCompleto ? apellidos : mockStudentProfile.apellidos,
-      email: user?.correo || mockStudentProfile.email,
-      matricula: user?.matricula || mockStudentProfile.matricula,
-      carrera: user?.carreraNombre || mockStudentProfile.carrera,
-      curp: user?.curp || mockStudentProfile.curp,
-      telefono: user?.telefono || mockStudentProfile.telefono,
+      nombre: user?.nombreCompleto ? nombre : '',
+      apellidos: user?.nombreCompleto ? apellidos : '',
+      email: user?.correo || '',
+      matricula: user?.matricula || '',
+      carrera: user?.carreraNombre || '',
+      curp: user?.curp || '',
+      telefono: user?.telefono || '',
     }
   })
 
   React.useEffect(() => {
     if (user) {
-      const parts = (user.nombreCompleto || '').trim().split(' ')
+      const parts = (user.nombreCompleto || '').trim().split(/\s+/).filter(Boolean)
       setProfile((prev) => ({
         ...prev,
-        nombre: user.nombreCompleto ? parts[0] : prev.nombre,
-        apellidos: user.nombreCompleto ? parts.slice(1).join(' ') : prev.apellidos,
+        nombre: parts[0] || prev.nombre,
+        apellidos: parts.slice(1).join(' ') || prev.apellidos,
         email: user.correo || prev.email,
         matricula: user.matricula || prev.matricula,
         carrera: user.carreraNombre || prev.carrera,
@@ -57,6 +57,14 @@ export const StudentProfileView: React.FC = () => {
       }))
     }
   }, [user])
+
+  // Iniciales dinámicas derivadas de la identidad real autenticada
+  const initials = React.useMemo(() => {
+    if (!user?.nombreCompleto) return 'SC'
+    const parts = user.nombreCompleto.trim().split(/\s+/).filter(Boolean)
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase()
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  }, [user?.nombreCompleto])
 
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
@@ -118,9 +126,8 @@ export const StudentProfileView: React.FC = () => {
             <div className="flex items-end gap-4">
               <div className="relative group">
                 <div className="w-24 h-24 rounded-lg bg-surface-lowest border-4 border-white shadow-layer-2 flex items-center justify-center text-primary text-3xl font-bold overflow-hidden">
-                  <div className="w-full h-full bg-primary-light flex items-center justify-center text-primary font-bold text-2xl">
-                    {profile.nombre[0]}
-                    {profile.apellidos[0]}
+                  <div className="w-full h-full bg-primary-light flex items-center justify-center text-primary font-bold text-2xl font-mono">
+                    {initials}
                   </div>
                 </div>
                 <button
@@ -133,10 +140,10 @@ export const StudentProfileView: React.FC = () => {
 
               <div>
                 <h1 className="text-xl font-bold text-secondary tracking-tight">
-                  {profile.nombre} {profile.apellidos}
+                  {user?.nombreCompleto || `${profile.nombre} ${profile.apellidos}`}
                 </h1>
                 <p className="text-xs text-secondary-slate mt-0.5">
-                  Matrícula: <span className="font-mono font-bold text-secondary">{profile.matricula}</span> • CURP: <span className="font-mono text-secondary">{profile.curp}</span>
+                  Matrícula: <span className="font-mono font-bold text-secondary">{user?.matricula || profile.matricula}</span> • CURP: <span className="font-mono text-secondary">{user?.curp || profile.curp || 'No registrada'}</span>
                 </p>
               </div>
             </div>
@@ -181,14 +188,37 @@ export const StudentProfileView: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Información Personal y de Contacto */}
             <div className="space-y-4">
-              <h2 className="text-sm font-bold text-secondary border-b border-border pb-2 flex items-center gap-2">
-                <User className="w-4 h-4 text-primary" />
-                Datos Personales y Contacto
-              </h2>
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                <h2 className="text-sm font-bold text-secondary flex items-center gap-2">
+                  <User className="w-4 h-4 text-primary" />
+                  Datos Personales y Contacto
+                </h2>
+                <Badge variant="info" size="sm">
+                  PostgreSQL / Expediente
+                </Badge>
+              </div>
 
               {!isEditing ? (
                 <div className="space-y-3 text-xs">
-                  <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-secondary-slate block text-[11px]">Correo Institucional (PostgreSQL)</span>
+                    <strong className="text-primary font-mono">{user?.correo || profile.email}</strong>
+                  </div>
+
+                  <div>
+                    <span className="text-secondary-slate block text-[11px]">Teléfono Registrado</span>
+                    <strong className="text-secondary font-mono">{user?.telefono || profile.telefono || 'Sin registrar'}</strong>
+                  </div>
+
+                  <div className="pt-2 border-t border-border-subtle">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-secondary-slate block text-[11px]">Dirección Residencial</span>
+                      <span className="text-[10px] text-secondary-muted font-mono bg-surface-canvas px-1 rounded">Dato Demostrativo</span>
+                    </div>
+                    <strong className="text-secondary">{profile.direccion}</strong>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
                     <div>
                       <span className="text-secondary-slate block text-[11px]">Fecha de Nacimiento</span>
                       <strong className="text-secondary">{profile.fechaNacimiento}</strong>
@@ -197,21 +227,6 @@ export const StudentProfileView: React.FC = () => {
                       <span className="text-secondary-slate block text-[11px]">Género</span>
                       <strong className="text-secondary">{profile.genero}</strong>
                     </div>
-                  </div>
-
-                  <div>
-                    <span className="text-secondary-slate block text-[11px]">Correo Institucional</span>
-                    <strong className="text-primary font-mono">{profile.email}</strong>
-                  </div>
-
-                  <div>
-                    <span className="text-secondary-slate block text-[11px]">Teléfono Móvil</span>
-                    <strong className="text-secondary font-mono">{profile.telefono}</strong>
-                  </div>
-
-                  <div>
-                    <span className="text-secondary-slate block text-[11px]">Dirección Registrada</span>
-                    <strong className="text-secondary">{profile.direccion}</strong>
                   </div>
                 </div>
               ) : (
@@ -232,17 +247,22 @@ export const StudentProfileView: React.FC = () => {
               )}
             </div>
 
-            {/* Información Académica Oficial (Solo lectura institucional) */}
+            {/* Información Académica Oficial */}
             <div className="space-y-4">
-              <h2 className="text-sm font-bold text-secondary border-b border-border pb-2 flex items-center gap-2">
-                <GraduationCap className="w-4 h-4 text-primary" />
-                Adscripción Curricular
-              </h2>
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                <h2 className="text-sm font-bold text-secondary flex items-center gap-2">
+                  <GraduationCap className="w-4 h-4 text-primary" />
+                  Adscripción Curricular
+                </h2>
+                <Badge variant="success" size="sm">
+                  Catálogo Escolar
+                </Badge>
+              </div>
 
               <div className="space-y-3 text-xs">
                 <div>
-                  <span className="text-secondary-slate block text-[11px]">Programa Académico</span>
-                  <strong className="text-secondary">{profile.carrera}</strong>
+                  <span className="text-secondary-slate block text-[11px]">Programa Académico (PostgreSQL)</span>
+                  <strong className="text-secondary font-semibold">{user?.carreraNombre || profile.carrera}</strong>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">

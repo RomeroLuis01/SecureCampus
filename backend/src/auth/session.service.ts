@@ -202,10 +202,15 @@ export async function revokeSession(rawToken: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Revokes all active sessions for a user (e.g. upon password reset or security lockout).
  */
 export async function revokeAllUserSessions(usuarioId: string): Promise<number> {
+  if (!usuarioId || !UUID_REGEX.test(usuarioId)) {
+    return 0;
+  }
   const result = await query(
     `UPDATE seguridad.sesiones
      SET revocado_en = CURRENT_TIMESTAMP

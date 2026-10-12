@@ -184,13 +184,16 @@ export const AdminDashboard: React.FC = () => {
       {/* 1. Header con Resumen de Seguridad */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="text-xs font-bold uppercase tracking-wider text-primary">
               Control de Seguridad & RBAC
             </span>
             <span className="text-secondary-muted">•</span>
             <Badge variant="info" size="sm">
-              Auditoría en Tiempo Real
+              Sesión Activa: {user?.correo || 'admin@securecampus.edu'}
+            </Badge>
+            <Badge variant="inactive" size="sm">
+              Métricas y Padrón: Demostrativo
             </Badge>
           </div>
           <h1 className="text-xl font-bold text-secondary tracking-tight">

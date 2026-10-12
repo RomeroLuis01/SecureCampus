@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { config } from '../config/env.js';
 import { authenticate, logout } from '../auth/auth.service.js';
-import { requireAuth } from '../auth/auth.middleware.js';
+import { requireAuth, getSessionCookieOptions, getClearCookieOptions } from '../auth/auth.middleware.js';
 import { authRateLimiter } from '../auth/rateLimiter.js';
 import { AppClientError } from '../middleware/errorHandler.js';
 
@@ -20,20 +20,6 @@ const loginSchema = z.object({
     .min(1, 'La contraseña no puede estar vacía')
     .max(256, 'La contraseña excede la longitud máxima'),
 });
-
-/**
- * Helper to construct standard cookie options.
- */
-function getSessionCookieOptions() {
-  const isProduction = config.NODE_ENV === 'production';
-  return {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: 'lax' as const,
-    path: '/',
-    maxAge: config.SESSION_TTL_HOURS * 3600 * 1000,
-  };
-}
 
 /**
  * POST /api/v1/auth/login
@@ -87,12 +73,7 @@ authRouter.post(
         await logout(token, usuarioId, req.ip, req.headers['user-agent']);
       }
 
-      res.clearCookie(config.SESSION_COOKIE_NAME, {
-        path: '/',
-        httpOnly: true,
-        secure: config.NODE_ENV === 'production',
-        sameSite: 'lax',
-      });
+      res.clearCookie(config.SESSION_COOKIE_NAME, getClearCookieOptions());
 
       res.status(200).json({
         message: 'Sesión cerrada exitosamente',

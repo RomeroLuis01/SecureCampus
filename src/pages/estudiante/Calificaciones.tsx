@@ -199,7 +199,7 @@ export const StudentGradesView: React.FC = () => {
                 <p className="text-xs text-red-700 mt-1">{error}</p>
               </div>
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
               <Button
                 variant="secondary"
                 size="sm"
@@ -208,6 +208,19 @@ export const StudentGradesView: React.FC = () => {
               >
                 Reintentar Consulta
               </Button>
+              {(error.toLowerCase().includes('401') ||
+                error.toLowerCase().includes('sesión') ||
+                error.toLowerCase().includes('autenticado')) && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    window.location.href = '/login'
+                  }}
+                >
+                  Iniciar Sesión
+                </Button>
+              )}
             </div>
           </CardBody>
         </Card>
@@ -291,8 +304,32 @@ export const StudentGradesView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Tarjetas de Resumen del Periodo */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* 2. Tarjetas de Resumen General y del Periodo */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-primary/20 bg-primary/5">
+          <CardBody className="p-4 flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-primary block">Promedio General</span>
+                <Badge variant="info" size="sm" className="text-[10px] py-0 px-1">
+                  Acumulado
+                </Badge>
+              </div>
+              <span className="text-2xl font-bold font-mono text-primary tabular-nums mt-0.5 block">
+                {data.resumenGeneral.promedioGeneral !== null
+                  ? data.resumenGeneral.promedioGeneral.toFixed(2)
+                  : 'N/A'}
+              </span>
+              <span className="text-[11px] text-secondary-slate mt-0.5 block">
+                {data.resumenGeneral.creditosTotalesAprobados} créditos acreditados
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded bg-primary text-white flex items-center justify-center shadow-sm">
+              <Award className="w-5 h-5" />
+            </div>
+          </CardBody>
+        </Card>
+
         <Card>
           <CardBody className="p-4 flex items-center justify-between">
             <div>
@@ -301,6 +338,9 @@ export const StudentGradesView: React.FC = () => {
                 {currentPeriod.resumen.promedio !== null
                   ? currentPeriod.resumen.promedio.toFixed(2)
                   : 'N/A'}
+              </span>
+              <span className="text-[11px] text-secondary-slate mt-0.5 block">
+                {currentPeriod.codigo}
               </span>
             </div>
             <div className="w-9 h-9 rounded bg-emerald-50 text-academic-success flex items-center justify-center border border-emerald-100">
@@ -312,10 +352,13 @@ export const StudentGradesView: React.FC = () => {
         <Card>
           <CardBody className="p-4 flex items-center justify-between">
             <div>
-              <span className="text-xs text-secondary-slate block">Créditos Aprobados</span>
+              <span className="text-xs text-secondary-slate block">Créditos del Periodo</span>
               <span className="text-2xl font-bold font-mono text-secondary tabular-nums mt-0.5 block">
                 {currentPeriod.resumen.creditosAprobados}{' '}
-                <span className="text-xs font-normal text-secondary-slate">créditos</span>
+                <span className="text-xs font-normal text-secondary-slate">CR</span>
+              </span>
+              <span className="text-[11px] text-secondary-slate mt-0.5 block">
+                Aprobados en {currentPeriod.codigo}
               </span>
             </div>
             <div className="w-9 h-9 rounded bg-blue-50 text-primary flex items-center justify-center border border-blue-100">
@@ -331,6 +374,11 @@ export const StudentGradesView: React.FC = () => {
               <span className="text-2xl font-bold font-mono text-secondary tabular-nums mt-0.5 block">
                 {currentPeriod.materias.length}{' '}
                 <span className="text-xs font-normal text-secondary-slate">materias</span>
+              </span>
+              <span className="text-[11px] text-secondary-slate mt-0.5 block">
+                {currentPeriod.materias.filter((m) => m.estadoCalificacion === 'PENDIENTE').length > 0
+                  ? `${currentPeriod.materias.filter((m) => m.estadoCalificacion === 'PENDIENTE').length} en evaluación`
+                  : 'Todas capturadas'}
               </span>
             </div>
             <div className="w-9 h-9 rounded bg-surface-canvas text-secondary-muted flex items-center justify-center border border-border">

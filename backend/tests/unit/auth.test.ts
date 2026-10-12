@@ -253,22 +253,27 @@ describe('auth.service (Unit Tests)', () => {
   });
 
   it('7. authenticate rejects suspended or inactive user with generic 401 (enumeration defense)', async () => {
-    vi.spyOn(databaseModule, 'query').mockResolvedValueOnce({
-      rows: [
-        {
-          usuario_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-          persona_id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
-          nombre_completo: 'Usuario Suspendido',
-          correo: 'suspendido@securecampus.edu',
-          estado_usuario: 'SUSPENDIDO',
-          password_hash: '$argon2id$v=19$m=19456,t=2,p=1$somehash',
-          estado_credencial: 'ACTIVO',
-          intentos_fallidos: 0,
-          bloqueado_hasta: null,
-        },
-      ],
-      rowCount: 1,
-    } as unknown as QueryResult);
+    vi.spyOn(databaseModule, 'query')
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            usuario_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+            persona_id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
+            nombre_completo: 'Usuario Suspendido',
+            correo: 'suspendido@securecampus.edu',
+            estado_usuario: 'SUSPENDIDO',
+            password_hash: '$argon2id$v=19$m=19456,t=2,p=1$somehash',
+            estado_credencial: 'ACTIVO',
+            intentos_fallidos: 0,
+            bloqueado_hasta: null,
+          },
+        ],
+        rowCount: 1,
+      } as unknown as QueryResult)
+      .mockResolvedValueOnce({
+        rows: [],
+        rowCount: 1,
+      } as unknown as QueryResult);
 
     vi.spyOn(argon2Service, 'verifyDummy');
 
@@ -381,5 +386,49 @@ describe('auth.service (Unit Tests)', () => {
 
     expect(revokeSpy).toHaveBeenCalledWith('session-token-to-revoke');
     expect(querySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('12. authenticate bubbles database errors up for centralized safe handling', async () => {
+    vi.spyOn(databaseModule, 'query').mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
+
+    await expect(
+      authenticate({
+        identifier: 'v.morales@securecampus.edu',
+        password: 'SomePassword123!',
+      })
+    ).rejects.toThrow('connection terminated unexpectedly');
+  });
+
+  it('13. getUserProfile retrieves credential status and temporary lockout timestamp', async () => {
+    const lockedDate = new Date('2026-10-12T00:00:00Z');
+    vi.spyOn(databaseModule, 'query')
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            usuario_id: 'u-locked',
+            persona_id: 'p-locked',
+            nombre_completo: 'Usuario Bloqueado',
+            correo: 'locked@securecampus.edu',
+            estado: 'ACTIVO',
+            telefono: null,
+            curp: null,
+            matricula: '202399999',
+            numero_empleado: null,
+            carrera_codigo: 'ISC',
+            carrera_nombre: 'Ingeniería en Sistemas Computacionales',
+            estado_credencial: 'BLOQUEADO',
+            bloqueado_hasta: lockedDate,
+          },
+        ],
+        rowCount: 1,
+      } as unknown as QueryResult)
+      .mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      } as unknown as QueryResult);
+
+    const profile = await getUserProfile('u-locked');
+    expect(profile.estadoCredencial).toBe('BLOQUEADO');
+    expect(profile.bloqueadoHasta).toEqual(lockedDate);
   });
 });

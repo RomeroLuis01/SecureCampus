@@ -1,8 +1,29 @@
 import type { Request, Response, NextFunction } from 'express';
 import { config } from '../config/env.js';
-import { validateSession } from './session.service.js';
+import { validateSession, revokeSession, revokeAllUserSessions } from './session.service.js';
 import { getUserProfile, type AuthUserProfile } from './auth.service.js';
 import { AppClientError } from '../middleware/errorHandler.js';
+
+export function getClearCookieOptions() {
+  const isProduction = config.NODE_ENV === 'production';
+  return {
+    path: '/',
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax' as const,
+  };
+}
+
+export function getSessionCookieOptions() {
+  const isProduction = config.NODE_ENV === 'production';
+  return {
+    path: '/',
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax' as const,
+    maxAge: config.SESSION_TTL_HOURS * 3600 * 1000,
+  };
+}
 
 declare global {
   namespace Express {
@@ -56,7 +77,8 @@ export function validateCsrfOrigin(req: Request): { isValid: boolean; reason?: s
 /**
  * Middleware that authenticates incoming requests using the secure session cookie.
  * Validates session expiration and idle timeout, injects req.user and req.sessionToken,
- * and enforces CSRF Origin checking on mutator HTTP operations.
+ * enforces CSRF Origin checking on mutator HTTP operations, and revokes sessions in PostgreSQL
+ * upon account suspension or expiration.
  */
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -79,8 +101,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // 3. Validate session in database
     const validation = await validateSession(token);
     if (!validation.isValid || !validation.usuarioId) {
-      // Clear invalid/expired cookie on client
-      res.clearCookie(config.SESSION_COOKIE_NAME);
+      // Actively mark session as revoked in PostgreSQL if token is present
+      if (token) {
+        await revokeSession(token);
+      }
+      // Clear invalid/expired cookie on client with full cookie options
+      res.clearCookie(config.SESSION_COOKIE_NAME, getClearCookieOptions());
       const message =
         validation.reason === 'EXPIRED_IDLE' || validation.reason === 'EXPIRED_ABSOLUTE'
           ? 'Sesión expirada. Por favor inicie sesión nuevamente.'
@@ -91,13 +117,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // 4. Load authenticated profile and active permissions
     const profile = await getUserProfile(validation.usuarioId);
 
-    // Verify account is still active
-    if (profile.estado !== 'ACTIVO') {
-      res.clearCookie(config.SESSION_COOKIE_NAME);
+    // Verify account is active and credentials are not administratively blocked
+    if (profile.estado !== 'ACTIVO' || profile.estadoCredencial === 'BLOQUEADO') {
+      // Invalidate all active sessions for this suspended or blocked account in PostgreSQL
+      await revokeAllUserSessions(validation.usuarioId);
+      res.clearCookie(config.SESSION_COOKIE_NAME, getClearCookieOptions());
       throw new AppClientError('Cuenta suspendida o inactiva', 403);
     }
 
-    // 5. Invalidate if user credential is administratively blocked
+    // Check for active temporary lockout
+    if (profile.bloqueadoHasta && new Date() < new Date(profile.bloqueadoHasta)) {
+      res.clearCookie(config.SESSION_COOKIE_NAME, getClearCookieOptions());
+      throw new AppClientError('Credencial bloqueada temporalmente', 403);
+    }
+
     req.user = profile;
     req.sessionToken = token;
 

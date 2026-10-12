@@ -40,6 +40,15 @@ export const JefeProfileView: React.FC = () => {
     }
   }, [user])
 
+  // Iniciales dinámicas del titular de jefatura
+  const initials = React.useMemo(() => {
+    const displayName = user?.nombreCompleto || profile.titularNombre
+    if (!displayName) return 'JC'
+    const parts = displayName.trim().split(/\s+/).filter(Boolean)
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase()
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  }, [user?.nombreCompleto, profile.titularNombre])
+
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editPhone, setEditPhone] = useState(profile.telefono)
   const [editExtension, setEditExtension] = useState(profile.extension)
@@ -237,11 +246,11 @@ export const JefeProfileView: React.FC = () => {
         <div className="space-y-6 lg:col-span-1">
           <Card className="border border-border shadow-sm p-6 space-y-4">
             <div className="text-center space-y-3 pb-4 border-b border-border-subtle">
-              <div className="w-20 h-20 rounded-xl bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-primary font-bold text-2xl mx-auto shadow-inner">
-                AM
+              <div className="w-20 h-20 rounded-xl bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-primary font-bold text-2xl mx-auto shadow-inner font-mono">
+                {initials}
               </div>
               <div>
-                <h3 className="text-base font-bold text-secondary">{profile.titularNombre}</h3>
+                <h3 className="text-base font-bold text-secondary">{user?.nombreCompleto || profile.titularNombre}</h3>
                 <p className="text-xs text-secondary-slate">{profile.titularGrado}</p>
                 <Badge variant="info" className="mt-2 text-[10px] font-semibold">
                   Nombramiento Institucional Vigente

@@ -75,7 +75,6 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
     LEFT JOIN academico.calificaciones cal ON cal.inscripcion_id = i.inscripcion_id
     LEFT JOIN academico.asignaciones_profesor_grupo apg 
       ON apg.grupo_id = g.grupo_id 
-      AND apg.rol = 'TITULAR' 
       AND apg.revocado_en IS NULL
     LEFT JOIN academico.profesores prof ON prof.profesor_id = apg.profesor_id
     LEFT JOIN nucleo.personas prof_persona ON prof_persona.persona_id = prof.persona_id
