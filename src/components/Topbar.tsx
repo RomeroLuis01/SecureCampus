@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Calendar,
   Check,
+  RefreshCw,
 } from 'lucide-react'
 import { cn } from '../utils'
 import { Badge } from './Badge'
@@ -29,6 +30,7 @@ export interface TopbarProps {
   notifications?: NotificationItem[]
   onSearch?: (query: string) => void
   onLogout?: () => void
+  isLoggingOut?: boolean
   onMarkNotificationAsRead?: (id: string) => void
 }
 
@@ -58,6 +60,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   ],
   onSearch,
   onLogout,
+  isLoggingOut = false,
   onMarkNotificationAsRead,
 }) => {
   const [searchQuery, setSearchQuery] = useState('')
@@ -88,7 +91,7 @@ export const Topbar: React.FC<TopbarProps> = ({
       </div>
 
       {/* Acciones Derechas */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
         {/* Periodo Académico Activo */}
         <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 bg-surface-canvas border border-border rounded text-xs text-secondary-slate shrink-0 leading-none">
           <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -156,6 +159,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                           onClick={() => onMarkNotificationAsRead(notif.id)}
                           className="text-secondary-muted hover:text-primary p-1 flex items-center justify-center shrink-0 rounded transition-colors"
                           title="Marcar como leída"
+                          aria-label="Marcar notificación como leída"
                         >
                           <Check className="w-3.5 h-3.5 shrink-0" />
                         </button>
@@ -170,6 +174,30 @@ export const Topbar: React.FC<TopbarProps> = ({
 
         <div className="h-6 w-px bg-border hidden sm:block" />
 
+        {/* Botón de Cierre de Sesión visible directo en Topbar (escritorio/tablets) */}
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            disabled={isLoggingOut}
+            aria-label="Cerrar sesión institucional"
+            title="Cerrar sesión"
+            className={cn(
+              'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
+              'text-academic-danger border-border hover:bg-red-50 hover:border-academic-danger/30',
+              'focus:outline-none focus:ring-2 focus:ring-academic-danger/30',
+              isLoggingOut && 'opacity-60 cursor-not-allowed'
+            )}
+          >
+            {isLoggingOut ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-academic-danger" />
+            ) : (
+              <LogOut className="w-3.5 h-3.5 shrink-0 text-academic-danger" />
+            )}
+            <span className="leading-none">{isLoggingOut ? 'Cerrando...' : 'Cerrar sesión'}</span>
+          </button>
+        )}
+
         {/* Perfil de Usuario */}
         <div className="relative">
           <button
@@ -177,7 +205,9 @@ export const Topbar: React.FC<TopbarProps> = ({
               setShowUserMenu(!showUserMenu)
               setShowNotifications(false)
             }}
-            className="flex items-center gap-3 p-1 rounded hover:bg-surface-canvas transition-colors text-left"
+            className="flex items-center gap-2.5 p-1 rounded hover:bg-surface-canvas transition-colors text-left focus:outline-none focus:ring-2 focus:ring-primary/20"
+            aria-label="Menú de usuario"
+            aria-expanded={showUserMenu}
           >
             {userAvatar ? (
               <img
@@ -222,11 +252,22 @@ export const Topbar: React.FC<TopbarProps> = ({
               {onLogout && (
                 <div className="border-t border-border-subtle pt-1">
                   <button
+                    type="button"
                     onClick={onLogout}
-                    className="w-full px-3.5 py-1.5 flex items-center gap-2 text-xs text-academic-danger hover:bg-red-50 text-left transition-colors font-medium"
+                    disabled={isLoggingOut}
+                    aria-label="Cerrar sesión institucional"
+                    className={cn(
+                      'w-full px-3.5 py-1.5 flex items-center gap-2 text-xs text-academic-danger hover:bg-red-50 text-left transition-colors font-medium',
+                      'focus:outline-none focus:ring-2 focus:ring-academic-danger/30',
+                      isLoggingOut && 'opacity-60 cursor-not-allowed'
+                    )}
                   >
-                    <LogOut className="w-3.5 h-3.5 shrink-0" />
-                    <span>Cerrar Sesión</span>
+                    {isLoggingOut ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-academic-danger" />
+                    ) : (
+                      <LogOut className="w-3.5 h-3.5 shrink-0 text-academic-danger" />
+                    )}
+                    <span>{isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}</span>
                   </button>
                 </div>
               )}

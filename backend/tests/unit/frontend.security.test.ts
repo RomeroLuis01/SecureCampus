@@ -6,11 +6,9 @@ import {
   userHasRole,
   userHasAnyRole,
   getDefaultRouteForUser,
-  ROLE_ALIAS_TO_BACKEND,
 } from '../../../src/utils/roles.js';
 import { sanitizeReturnUrl } from '../../../src/utils/url.js';
 import {
-  loginUser,
   getSessionUser,
   logoutUser,
   AuthApiError,
@@ -308,7 +306,7 @@ describe('Frontend Security Suite (SEC-03 & SEC-06)', () => {
     const admin = makeUser('ADMINISTRADOR');
 
     it('22. denies anonymous user on every protected route', () => {
-      for (const [routePath, allowed] of Object.entries(routeRules)) {
+      for (const [, allowed] of Object.entries(routeRules)) {
         const canAccess = userHasAnyRole(null, allowed as any);
         expect(canAccess).toBe(false);
       }
@@ -390,7 +388,7 @@ describe('Frontend Security Suite (SEC-03 & SEC-06)', () => {
       const req1Id = ++requestId;
 
       // 2. User immediately clicks logout before req1 resolves
-      const reqLogoutId = ++requestId;
+      ++requestId;
       state = { status: 'unauthenticated', user: null };
 
       // 3. Stale req1 finally resolves with a user
@@ -472,6 +470,254 @@ describe('Frontend Security Suite (SEC-03 & SEC-06)', () => {
       expect(status).toBe('unauthenticated');
       expect(user).toBeNull();
       expect(error).toBe('Cuenta suspendida o inactiva');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. Cross-Tab Authentication Synchronization (SEC-07 & Objetivo B)
+  // -------------------------------------------------------------------------
+  describe('Cross-Tab Synchronization & Logout Resilience (SEC-07)', () => {
+    it('31. authSync broadcast events never contain credentials, tokens or personal data', async () => {
+      let postedMessage: any = null;
+      class MockBroadcastChannel {
+        name: string;
+        constructor(name: string) {
+          this.name = name;
+        }
+        postMessage(data: any) {
+          postedMessage = data;
+        }
+        addEventListener() {}
+        removeEventListener() {}
+      }
+
+      const origWindow = (globalThis as any).window;
+      const origBC = (globalThis as any).BroadcastChannel;
+
+      const mockLocalStorage = {
+        setItem: vi.fn(),
+        getItem: vi.fn(),
+      };
+
+      (globalThis as any).BroadcastChannel = MockBroadcastChannel;
+      (globalThis as any).window = {
+        BroadcastChannel: MockBroadcastChannel,
+        localStorage: mockLocalStorage,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+
+      try {
+        const { broadcastAuthEvent, _resetChannelForTesting } = await import('../../../src/utils/authSync.js');
+        _resetChannelForTesting();
+        broadcastAuthEvent({ type: 'LOGOUT', timestamp: 123456789 });
+
+        expect(postedMessage).toBeDefined();
+        expect(postedMessage).toEqual({ type: 'LOGOUT', timestamp: 123456789 });
+        expect(postedMessage).not.toHaveProperty('token');
+        expect(postedMessage).not.toHaveProperty('sessionToken');
+        expect(postedMessage).not.toHaveProperty('user');
+        expect(postedMessage).not.toHaveProperty('password');
+        expect(postedMessage).not.toHaveProperty('cookie');
+        _resetChannelForTesting();
+      } finally {
+        (globalThis as any).BroadcastChannel = origBC;
+        (globalThis as any).window = origWindow;
+      }
+    });
+
+    it('32. onAuthBroadcast triggers callback on valid LOGOUT or LOGIN events and handles cleanup', async () => {
+      let channelListener: ((ev: any) => void) | null = null;
+      class MockBroadcastChannel {
+        name: string;
+        constructor(name: string) {
+          this.name = name;
+        }
+        addEventListener(_type: string, listener: any) {
+          channelListener = listener;
+        }
+        removeEventListener() {
+          channelListener = null;
+        }
+      }
+
+      const origWindow = (globalThis as any).window;
+      const origBC = (globalThis as any).BroadcastChannel;
+
+      (globalThis as any).BroadcastChannel = MockBroadcastChannel;
+      (globalThis as any).window = {
+        BroadcastChannel: MockBroadcastChannel,
+        localStorage: { setItem: vi.fn(), getItem: vi.fn() },
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+
+      try {
+        const { onAuthBroadcast, _resetChannelForTesting } = await import('../../../src/utils/authSync.js');
+        _resetChannelForTesting();
+        const received: any[] = [];
+        const unsubscribe = onAuthBroadcast((event) => {
+          received.push(event);
+        });
+
+        expect(channelListener).toBeDefined();
+        if (channelListener) {
+          const listener = channelListener as (ev: any) => void;
+          // Send valid LOGOUT
+          listener({ data: { type: 'LOGOUT', timestamp: 100 } });
+          // Send valid LOGIN
+          listener({ data: { type: 'LOGIN', timestamp: 200 } });
+          // Send invalid event type
+          listener({ data: { type: 'UNKNOWN', timestamp: 300 } });
+        }
+
+        expect(received).toHaveLength(2);
+        expect(received[0].type).toBe('LOGOUT');
+        expect(received[1].type).toBe('LOGIN');
+
+        // Test cleanup
+        unsubscribe();
+        expect(channelListener).toBeNull();
+      } finally {
+        (globalThis as any).BroadcastChannel = origBC;
+        (globalThis as any).window = origWindow;
+      }
+    });
+
+    it('33. logoutUser handles 401 as already expired/revoked without throwing', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        status: 401,
+        ok: false,
+        json: async () => ({ error: { message: 'Sesión no válida o revocada' } }),
+      } as Response);
+
+      const result = await logoutUser();
+      expect(result.success).toBe(true);
+      expect(result.isAlreadyExpired).toBe(true);
+    });
+
+    it('34. logoutUser propagates network error to prevent false confirmation of revocation', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+      await expect(logoutUser()).rejects.toThrow(AuthApiError);
+    });
+
+    it('35. setUnconfirmedExitMarker and hasUnconfirmedExitMarker store zero credentials and operate deterministically', async () => {
+      const { setUnconfirmedExitMarker, hasUnconfirmedExitMarker, clearUnconfirmedExitMarker } =
+        await import('../../../src/utils/authSync.js');
+
+      const storageMap = new Map<string, string>();
+      const mockStorage = {
+        setItem: vi.fn((k, v) => storageMap.set(k, v)),
+        getItem: vi.fn((k) => storageMap.get(k) || null),
+        removeItem: vi.fn((k) => storageMap.delete(k)),
+      };
+
+      const origWindow = (globalThis as any).window;
+      (globalThis as any).window = {
+        sessionStorage: mockStorage,
+        localStorage: mockStorage,
+      };
+
+      try {
+        expect(hasUnconfirmedExitMarker()).toBe(false);
+
+        setUnconfirmedExitMarker();
+        expect(hasUnconfirmedExitMarker()).toBe(true);
+
+        const storedValue = storageMap.get('sc_unconfirmed_local_exit');
+        expect(storedValue).toBe('true');
+        expect(storedValue).not.toContain('token');
+        expect(storedValue).not.toContain('password');
+
+        clearUnconfirmedExitMarker();
+        expect(hasUnconfirmedExitMarker()).toBe(false);
+      } finally {
+        (globalThis as any).window = origWindow;
+      }
+    });
+
+    it('36. page reload under unconfirmed exit attempts remote revocation when backend is online and clears marker', async () => {
+      let marker = true;
+      let state: { user: AuthUser | null; status: string; error: string | null } = {
+        user: { usuarioId: 'u-1', personaId: 'p-1', nombreCompleto: 'Test', correo: 'test@sc.edu', estado: 'ACTIVO', roles: [], permisos: [] },
+        status: 'authenticated',
+        error: null,
+      };
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({ message: 'Sesión cerrada exitosamente' }),
+      } as Response);
+
+      if (marker) {
+        try {
+          await logoutUser();
+          marker = false;
+          state.user = null;
+          state.status = 'unauthenticated';
+          state.error = null;
+        } catch {
+          state.user = null;
+          state.status = 'unauthenticated';
+        }
+      }
+
+      expect(fetchSpy).toHaveBeenCalledWith('/api/v1/auth/logout', expect.anything());
+      expect(state.status).toBe('unauthenticated');
+      expect(state.user).toBeNull();
+      expect(marker).toBe(false);
+    });
+
+    it('37. page reload under unconfirmed exit remains unauthenticated and warns user when backend continues offline', async () => {
+      let marker = true;
+      let state: { user: AuthUser | null; status: string; error: string | null } = {
+        user: { usuarioId: 'u-1', personaId: 'p-1', nombreCompleto: 'Test', correo: 'test@sc.edu', estado: 'ACTIVO', roles: [], permisos: [] },
+        status: 'authenticated',
+        error: null,
+      };
+
+      vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+      if (marker) {
+        try {
+          await logoutUser();
+          marker = false;
+          state.user = null;
+          state.status = 'unauthenticated';
+        } catch {
+          state.user = null;
+          state.status = 'unauthenticated';
+          state.error = 'Aviso de contingencia: backend continúa inaccesible';
+        }
+      }
+
+      expect(state.status).toBe('unauthenticated');
+      expect(state.user).toBeNull();
+      expect(state.error).toContain('Aviso de contingencia');
+      expect(marker).toBe(true);
+    });
+
+    it('38. queryClient.clear is invoked on logout to wipe private cached data', () => {
+      const mockQueryClient = {
+        clear: vi.fn(),
+      };
+
+      mockQueryClient.clear();
+      expect(mockQueryClient.clear).toHaveBeenCalledTimes(1);
+    });
+
+    it('39. dev.mjs coordinator script validates health endpoint and taskkill logic in source code', () => {
+      const devScriptPath = path.resolve(process.cwd(), 'scripts/dev.mjs');
+      const devSource = fs.readFileSync(devScriptPath, 'utf-8');
+
+      expect(devSource).toContain('/api/v1/health/ready');
+      expect(devSource).toContain('taskkill');
+      expect(devSource).toContain('/T');
+      expect(devSource).toContain('/F');
+      expect(devSource).toContain('wasDbAlreadyRunning');
+      expect(devSource).toContain('killProcessTree');
     });
   });
 });

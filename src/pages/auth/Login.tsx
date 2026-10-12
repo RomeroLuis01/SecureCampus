@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import {
   Lock,
   Mail,
@@ -8,6 +8,9 @@ import {
   ShieldCheck,
   ArrowRight,
   AlertCircle,
+  AlertTriangle,
+  CheckCircle,
+  RefreshCw,
 } from 'lucide-react'
 import { Button, Input, Card, CardBody, Modal } from '../../components'
 import { useAuth } from '../../context/AuthContext'
@@ -16,8 +19,9 @@ import { sanitizeReturnUrl } from '../../utils/url'
 
 export const Login: React.FC = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
-  const { login, user, status, error: authError } = useAuth()
+  const { login, user, status, error: authError, confirmPendingRevocation, hasPendingUnconfirmedExit } = useAuth()
 
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -25,6 +29,8 @@ export const Login: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [confirmingRevocation, setConfirmingRevocation] = useState(false)
+  const [revocationSuccessNotice, setRevocationSuccessNotice] = useState<string | null>(null)
   const [showRecoveryModal, setShowRecoveryModal] = useState(false)
   const [recoveryEmail, setRecoveryEmail] = useState('')
   const [recoverySent, setRecoverySent] = useState(false)
@@ -88,6 +94,23 @@ export const Login: React.FC = () => {
     setRecoverySent(true)
   }
 
+  const isUnconfirmedExit = hasPendingUnconfirmedExit || Boolean(location.state?.unconfirmedLogout)
+
+  const handleConfirmRevocation = async () => {
+    setConfirmingRevocation(true)
+    setError('')
+    try {
+      const success = await confirmPendingRevocation()
+      if (success) {
+        setRevocationSuccessNotice('Revocación remota confirmada en el servidor y cookie institucional eliminada.')
+      }
+    } catch (err: any) {
+      setError('Error de comunicación: ' + (err?.message || 'El servidor continúa inaccesible.'))
+    } finally {
+      setConfirmingRevocation(false)
+    }
+  }
+
   const activeErrorMessage = error || authError
 
   return (
@@ -106,7 +129,46 @@ export const Login: React.FC = () => {
         </div>
 
         <CardBody className="p-6 sm:p-8">
-          {activeErrorMessage && (
+          {/* Aviso de Contingencia: Salida Local No Confirmada Remotamente */}
+          {isUnconfirmedExit && !revocationSuccessNotice && (
+            <div
+              role="alert"
+              className="mb-5 p-3.5 rounded-md bg-amber-50 border border-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 text-xs animate-in fade-in"
+            >
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-amber-950">Salida local completada (Sin confirmación remota)</p>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    Los datos locales se limpiaron, pero la sesión no pudo ser revocada en PostgreSQL porque el backend estaba inaccesible.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleConfirmRevocation}
+                isLoading={confirmingRevocation}
+                leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+                className="shrink-0 bg-white border-amber-400 hover:bg-amber-100 text-amber-900 font-medium"
+              >
+                Confirmar en servidor
+              </Button>
+            </div>
+          )}
+
+          {/* Confirmación exitosa de revocación tardía */}
+          {revocationSuccessNotice && (
+            <div
+              role="status"
+              className="mb-5 p-3 rounded-md bg-green-50 border border-green-200 flex items-center gap-2 text-green-800 text-xs font-medium animate-in fade-in"
+            >
+              <CheckCircle className="w-4 h-4 shrink-0 text-green-600" />
+              <span>{revocationSuccessNotice}</span>
+            </div>
+          )}
+
+          {activeErrorMessage && !isUnconfirmedExit && (
             <div className="mb-5 p-3 rounded-md bg-academic-danger-bg border border-academic-danger-border flex items-start gap-2.5 text-academic-danger-text text-xs">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{activeErrorMessage}</span>

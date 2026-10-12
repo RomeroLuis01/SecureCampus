@@ -10,8 +10,10 @@ import {
   Server,
   BookOpen,
   Calendar,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react'
-import { Sidebar, Topbar } from '../components'
+import { Sidebar, Topbar, Button } from '../components'
 import type { NavItem } from '../components'
 import { useAuth } from '../context/AuthContext'
 
@@ -21,6 +23,8 @@ export interface DashboardLayoutProps {
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role = 'estudiante' }) => {
   const [collapsed, setCollapsed] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [logoutError, setLogoutError] = useState<string | null>(null)
   const navigate = useNavigate()
   const { user, logout } = useAuth()
 
@@ -151,20 +155,49 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role = 'estudi
     { code: 'ADMINISTRADOR', path: '/admin', label: 'Administrador', active: role === 'admin' },
   ].filter((p) => userRoles.includes(p.code))
 
-  const handleLogout = async () => {
-    await logout()
-    navigate('/login', { replace: true })
+  const handleLogout = async (forceLocal = false) => {
+    if (isLoggingOut) return
+    setIsLoggingOut(true)
+    setLogoutError(null)
+
+    try {
+      const result = await logout({ forceLocal })
+      if (!result.confirmedOnServer) {
+        navigate('/login', {
+          replace: true,
+          state: {
+            unconfirmedLogout: true,
+            warning:
+              'Salida local completada. La revocación en el servidor no pudo ser confirmada debido a una falla de comunicación con el backend.',
+          },
+        })
+      } else {
+        navigate('/login', { replace: true })
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'No se pudo contactar al servidor central para revocar la sesión criptográfica.'
+      setLogoutError(
+        `Fallo al revocar sesión remota: ${msg}. La sesión local se mantiene activa para permitir el reintento.`
+      )
+    } finally {
+      setIsLoggingOut(false)
+    }
   }
 
   return (
     <div className="min-h-screen bg-surface-canvas flex font-sans">
-      {/* Barra de Navegación Lateral */}
+      {/* Barra de Navegación Lateral con Botón de Logout Integrado */}
       <Sidebar
         roleName={currentConfig.roleName}
         roleTitle={currentConfig.roleTitle}
         navItems={currentConfig.items}
         isCollapsed={collapsed}
         onToggleCollapse={() => setCollapsed(!collapsed)}
+        onLogout={() => handleLogout(false)}
+        isLoggingOut={isLoggingOut}
         footerAction={
           <div className="p-2 bg-surface-canvas border border-border-subtle rounded text-[11px] text-secondary-slate">
             <span className="font-semibold block text-secondary">SecureCampus v1.0</span>
@@ -181,10 +214,42 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role = 'estudi
           userRole={currentConfig.roleName}
           term="Periodo 2026-B"
           onSearch={(query) => console.log('Búsqueda:', query)}
-          onLogout={handleLogout}
+          onLogout={() => handleLogout(false)}
+          isLoggingOut={isLoggingOut}
         />
 
         <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
+          {/* Alerta de Contingencia si falla la revocación remota en el servidor */}
+          {logoutError && (
+            <div
+              role="alert"
+              className="mb-6 p-4 bg-academic-danger-bg border border-academic-danger-border rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in"
+            >
+              <div className="flex items-center gap-2.5 text-xs text-academic-danger-text font-medium">
+                <AlertCircle className="w-5 h-5 shrink-0 text-academic-danger" />
+                <span>{logoutError}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => handleLogout(false)}
+                  isLoading={isLoggingOut}
+                  leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+                >
+                  Reintentar revocación
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => handleLogout(true)}
+                >
+                  Salir solo localmente
+                </Button>
+              </div>
+            </div>
+          )}
+
           <Outlet />
         </main>
 
@@ -213,4 +278,3 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role = 'estudi
     </div>
   )
 }
-

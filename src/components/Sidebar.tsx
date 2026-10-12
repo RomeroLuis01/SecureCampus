@@ -4,6 +4,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  LogOut,
+  RefreshCw,
 } from 'lucide-react'
 import { cn } from '../utils'
 import { Badge } from './Badge'
@@ -23,6 +25,8 @@ export interface SidebarProps {
   isCollapsed?: boolean
   onToggleCollapse?: () => void
   footerAction?: React.ReactNode
+  onLogout?: () => void
+  isLoggingOut?: boolean
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -32,6 +36,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed = false,
   onToggleCollapse,
   footerAction,
+  onLogout,
+  isLoggingOut = false,
 }) => {
   const location = useLocation()
 
@@ -69,6 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={onToggleCollapse}
             className="p-1 rounded flex items-center justify-center text-secondary-muted hover:text-secondary hover:bg-surface-low transition-colors shrink-0"
             title="Colapsar menú"
+            aria-label="Colapsar menú"
           >
             <ChevronLeft className="w-4 h-4 shrink-0" />
           </button>
@@ -129,13 +136,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {/* Pie del Sidebar / Botón de Expansión si está colapsado */}
-      <div className="p-3 border-t border-border-subtle bg-surface-lowest">
+      {/* Pie del Sidebar: Botón de Cierre de Sesión, Acción Footer y Expansión */}
+      <div className="p-3 border-t border-border-subtle bg-surface-lowest space-y-2">
+        {/* Botón Global de Cierre de Sesión Accesible */}
+        {onLogout && (
+          <div>
+            {!isCollapsed ? (
+              <button
+                type="button"
+                onClick={onLogout}
+                disabled={isLoggingOut}
+                aria-label="Cerrar sesión institucional"
+                title="Cerrar sesión"
+                className={cn(
+                  'w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded transition-all font-medium',
+                  'text-academic-danger hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-academic-danger/30',
+                  isLoggingOut && 'opacity-60 cursor-not-allowed'
+                )}
+              >
+                {isLoggingOut ? (
+                  <RefreshCw className="w-4 h-4 animate-spin shrink-0 text-academic-danger" />
+                ) : (
+                  <LogOut className="w-4 h-4 shrink-0 text-academic-danger" />
+                )}
+                <span className="truncate leading-none">
+                  {isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onLogout}
+                disabled={isLoggingOut}
+                aria-label="Cerrar sesión institucional"
+                title="Cerrar sesión"
+                className={cn(
+                  'w-full py-2 flex items-center justify-center text-academic-danger hover:bg-red-50 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-academic-danger/30',
+                  isLoggingOut && 'opacity-60 cursor-not-allowed'
+                )}
+              >
+                {isLoggingOut ? (
+                  <RefreshCw className="w-4 h-4 animate-spin shrink-0 text-academic-danger" />
+                ) : (
+                  <LogOut className="w-4 h-4 shrink-0 text-academic-danger" />
+                )}
+              </button>
+            )}
+          </div>
+        )}
+
         {isCollapsed && onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
             className="w-full py-2 flex items-center justify-center text-secondary-muted hover:text-secondary hover:bg-surface-low rounded transition-colors"
             title="Expandir menú"
+            aria-label="Expandir menú"
           >
             <ChevronRight className="w-4 h-4 shrink-0" />
           </button>
