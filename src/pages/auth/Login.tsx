@@ -5,7 +5,6 @@ import {
   Mail,
   Eye,
   EyeOff,
-  ShieldCheck,
   ArrowRight,
   AlertCircle,
   AlertTriangle,
@@ -14,8 +13,7 @@ import {
 } from 'lucide-react'
 import { Button, Input, Card, CardBody, Modal } from '../../components'
 import { useAuth } from '../../context/AuthContext'
-import { getDefaultRouteForUser } from '../../utils/roles'
-import { sanitizeReturnUrl } from '../../utils/url'
+import { getSafeRedirectForUser } from '../../utils/roles'
 
 export const Login: React.FC = () => {
   const navigate = useNavigate()
@@ -38,9 +36,7 @@ export const Login: React.FC = () => {
   // Redirigir si el usuario ya cuenta con una sesión válida
   useEffect(() => {
     if (status === 'authenticated' && user) {
-      const returnUrlParam = searchParams.get('returnUrl')
-      const safeTarget = sanitizeReturnUrl(returnUrlParam, '')
-      const destination = safeTarget || getDefaultRouteForUser(user)
+      const destination = getSafeRedirectForUser(searchParams.get('returnUrl'), user)
       if (destination && destination !== '/login') {
         navigate(destination, { replace: true })
       }
@@ -67,18 +63,11 @@ export const Login: React.FC = () => {
       const authenticatedUser = await login(identifier.trim(), password)
       setIsLoading(false)
 
-      const returnUrlParam = searchParams.get('returnUrl')
-      const safeTarget = sanitizeReturnUrl(returnUrlParam, '')
-
-      if (safeTarget) {
-        navigate(safeTarget, { replace: true })
+      const destination = getSafeRedirectForUser(searchParams.get('returnUrl'), authenticatedUser)
+      if (destination && destination !== '/login') {
+        navigate(destination, { replace: true })
       } else {
-        const destination = getDefaultRouteForUser(authenticatedUser)
-        if (destination && destination !== '/login') {
-          navigate(destination, { replace: true })
-        } else {
-          setError('Su cuenta no cuenta con roles activos para acceder a ningún portal institucional.')
-        }
+        setError('Su cuenta no cuenta con roles activos para acceder a ningún portal institucional.')
       }
     } catch (err: any) {
       setIsLoading(false)
@@ -244,13 +233,6 @@ export const Login: React.FC = () => {
         </CardBody>
       </Card>
 
-      {/* Nota de Seguridad */}
-      <div className="p-3.5 bg-surface-lowest border border-border rounded-lg text-xs text-secondary-slate flex items-center gap-3">
-        <ShieldCheck className="w-5 h-5 text-primary shrink-0" />
-        <p className="leading-normal">
-          Acceso protegido con cifrado TLS 1.3 y registro en la bitácora criptográfica de auditoría.
-        </p>
-      </div>
 
       {/* Modal de Recuperación */}
       <Modal

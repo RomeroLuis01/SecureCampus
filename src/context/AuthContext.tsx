@@ -32,6 +32,7 @@ export interface AuthContextValue {
   refreshSession: () => Promise<void>;
   confirmPendingRevocation: () => Promise<boolean>;
   hasPendingUnconfirmedExit: boolean;
+  isLoggedOut: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -45,6 +46,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasPendingUnconfirmedExit, setHasPendingUnconfirmedExit] = useState(false);
+  const [isLoggedOut, setIsLoggedOut] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -101,6 +103,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(activeUser);
         setStatus('authenticated');
         setError(null);
+        setIsLoggedOut(false);
       } else {
         // 401 confirmado: Sin sesión activa en el servidor
         setUser(null);
@@ -137,12 +140,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (event.type === 'LOGOUT') {
         // Otra pestaña cerró sesión: purgar estado local inmediatamente
         ++requestIdRef.current;
+        setIsLoggedOut(true);
         queryClient.clear();
         setUser(null);
         setStatus('unauthenticated');
         setError(null);
       } else if (event.type === 'LOGIN') {
         // Otra pestaña inició sesión: re-validar sesión con la cookie compartida
+        setIsLoggedOut(false);
         checkSession();
       }
     });
@@ -161,6 +166,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(authenticatedUser);
           setStatus('authenticated');
           setError(null);
+          setIsLoggedOut(false);
         }
 
         // Limpiar la marca de salida previa al autenticarse legítimamente con nuevas credenciales
@@ -209,6 +215,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Limpieza de estado local garantizada si la revocación fue confirmada o si fue forzada
         if (confirmedOnServer || options?.forceLocal) {
           // 1. Resetear estado de autenticación en React
+          setIsLoggedOut(true);
           setUser(null);
           setStatus('unauthenticated');
           setError(null);
@@ -235,6 +242,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await logoutUser();
       clearUnconfirmedExitMarker();
       setHasPendingUnconfirmedExit(false);
+      setIsLoggedOut(true);
       setUser(null);
       setStatus('unauthenticated');
       setError(null);
@@ -257,6 +265,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     refreshSession: checkSession,
     confirmPendingRevocation,
     hasPendingUnconfirmedExit,
+    isLoggedOut,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

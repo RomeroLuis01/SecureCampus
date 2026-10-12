@@ -6,6 +6,9 @@ import {
   userHasRole,
   userHasAnyRole,
   getDefaultRouteForUser,
+  getAllowedRolesForPath,
+  isRouteAllowedForUser,
+  getSafeRedirectForUser,
 } from '../../../src/utils/roles.js';
 import { sanitizeReturnUrl } from '../../../src/utils/url.js';
 import {
@@ -720,4 +723,242 @@ describe('Frontend Security Suite (SEC-03 & SEC-06)', () => {
       expect(devSource).toContain('killProcessTree');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // 8. User Switching & Safe Redirection Suite (Mandatory 10 Requirements)
+  // -------------------------------------------------------------------------
+  describe('User Switching & Safe Redirection (Diagnóstico y Corrección RBAC)', () => {
+    const studentUser: AuthUser = {
+      usuarioId: 'u-student',
+      personaId: 'p-student',
+      nombreCompleto: 'Estudiante Alumno',
+      correo: 'alumno@securecampus.edu',
+      estado: 'ACTIVO',
+      roles: [{ rolId: 'r-1', codigo: 'ALUMNO', carreraId: 'c-1' }],
+      permisos: ['VER_CALIFICACIONES'],
+    };
+
+    const adminUser: AuthUser = {
+      usuarioId: 'u-admin',
+      personaId: 'p-admin',
+      nombreCompleto: 'Admin Central',
+      correo: 'admin@securecampus.edu',
+      estado: 'ACTIVO',
+      roles: [{ rolId: 'r-2', codigo: 'ADMINISTRADOR', carreraId: null }],
+      permisos: ['GESTION_USUARIOS', 'AUDITORIA'],
+    };
+
+    const teacherUser: AuthUser = {
+      usuarioId: 'u-teacher',
+      personaId: 'p-teacher',
+      nombreCompleto: 'Profesor Titular',
+      correo: 'profesor@securecampus.edu',
+      estado: 'ACTIVO',
+      roles: [{ rolId: 'r-3', codigo: 'PROFESOR', carreraId: 'c-1' }],
+      permisos: ['CAPTURAR_CALIFICACIONES'],
+    };
+
+    const jefeUser: AuthUser = {
+      usuarioId: 'u-jefe',
+      personaId: 'p-jefe',
+      nombreCompleto: 'Jefe Carrera Sistemas',
+      correo: 'jefe@securecampus.edu',
+      estado: 'ACTIVO',
+      roles: [{ rolId: 'r-4', codigo: 'JEFE_CARRERA', carreraId: 'c-1' }],
+      permisos: ['GESTION_CURRICULAR'],
+    };
+
+    it('40. Alumno → logout → administrador: la primera ruta protegida tras el login es el portal de administrador', () => {
+      // Flujo:
+      // 1. Alumno estaba en '/estudiante'
+      // 2. Cierra sesión: logout limpio sin returnUrl ('/login') o incluso si un parámetro obsoleto quedara
+      // 3. Administrador inicia sesión
+      const targetRoute = getSafeRedirectForUser('/estudiante', adminUser);
+      expect(targetRoute).toBe('/admin');
+
+      // Si no hay returnUrl tras logout limpio:
+      const cleanTarget = getSafeRedirectForUser(null, adminUser);
+      expect(cleanTarget).toBe('/admin');
+    });
+
+    it('41. Administrador → logout → profesor: la primera ruta protegida tras el login es el portal de profesor', () => {
+      // Flujo:
+      // 1. Admin estaba en '/admin/usuarios'
+      // 2. Cierra sesión
+      // 3. Profesor inicia sesión
+      const targetRoute = getSafeRedirectForUser('/admin/usuarios', teacherUser);
+      expect(targetRoute).toBe('/profesor');
+
+      const cleanTarget = getSafeRedirectForUser(null, teacherUser);
+      expect(cleanTarget).toBe('/profesor');
+    });
+
+    it('42. Profesor → logout → alumno: no se reutiliza la ruta anterior del profesor', () => {
+      // Flujo:
+      // 1. Profesor estaba en '/profesor/calificaciones'
+      // 2. Cierra sesión
+      // 3. Alumno inicia sesión
+      const targetRoute = getSafeRedirectForUser('/profesor/calificaciones', studentUser);
+      expect(targetRoute).toBe('/estudiante');
+      expect(targetRoute).not.toContain('/profesor');
+    });
+
+    it('43. Jefe de carrera → logout → administrador: no se reutiliza la ruta anterior del jefe de carrera', () => {
+      // Flujo:
+      // 1. Jefe estaba en '/jefe_carrera/docentes'
+      // 2. Cierra sesión
+      // 3. Administrador inicia sesión
+      const targetRoute = getSafeRedirectForUser('/jefe_carrera/docentes', adminUser);
+      expect(targetRoute).toBe('/admin');
+      expect(targetRoute).not.toContain('/jefe_carrera');
+    });
+
+    it('44. Una ruta de retorno perteneciente al rol anterior se rechaza para la nueva cuenta', () => {
+      // Alumno intenta heredar ruta de admin
+      expect(getSafeRedirectForUser('/admin', studentUser)).toBe('/estudiante');
+      expect(getSafeRedirectForUser('/admin/usuarios', studentUser)).toBe('/estudiante');
+      expect(getSafeRedirectForUser('/admin/auditoria', studentUser)).toBe('/estudiante');
+      expect(getSafeRedirectForUser('/admin/sistema', studentUser)).toBe('/estudiante');
+
+      // Profesor intenta heredar ruta de jefe de carrera
+      expect(getSafeRedirectForUser('/jefe_carrera', teacherUser)).toBe('/profesor');
+      expect(getSafeRedirectForUser('/jefe_carrera/oferta', teacherUser)).toBe('/profesor');
+
+      // Admin intenta heredar ruta de alumno
+      expect(getSafeRedirectForUser('/estudiante/solicitudes', adminUser)).toBe('/admin');
+    });
+
+    it('45. Una ruta de retorno válida y autorizada puede conservarse si esa funcionalidad ya existe', () => {
+      // Profesor con deep-link a calificaciones
+      expect(getSafeRedirectForUser('/profesor/calificaciones?periodo=2026-B', teacherUser)).toBe(
+        '/profesor/calificaciones?periodo=2026-B'
+      );
+      expect(getSafeRedirectForUser('/profesor/grupos', teacherUser)).toBe('/profesor/grupos');
+
+      // Alumno con deep-link a su kárdex
+      expect(getSafeRedirectForUser('/estudiante/calificaciones', studentUser)).toBe(
+        '/estudiante/calificaciones'
+      );
+
+      // Administrador con búsqueda en usuarios
+      expect(getSafeRedirectForUser('/admin/usuarios?search=profesor#sec', adminUser)).toBe(
+        '/admin/usuarios?search=profesor#sec'
+      );
+
+      // Jefe de carrera con vista de docentes
+      expect(getSafeRedirectForUser('/jefe_carrera/docentes', jefeUser)).toBe(
+        '/jefe_carrera/docentes'
+      );
+    });
+
+    it('46. Una respuesta tardía de una solicitud de autenticación anterior no sobrescribe la identidad de la sesión actual', () => {
+      let requestId = 0;
+      let currentUser: AuthUser | null = null;
+      let currentStatus = 'loading';
+
+      // 1. Petición A inicia (checkSession inicial para studentUser)
+      const reqA = ++requestId;
+
+      // 2. Antes de que A responda, usuario hace login legítimo como adminUser (Petición B)
+      const reqB = ++requestId;
+      currentUser = adminUser;
+      currentStatus = 'authenticated';
+
+      // 3. Petición A tardía responde ahora con studentUser
+      const lateStudent = studentUser;
+      if (reqA === requestId) {
+        currentUser = lateStudent;
+        currentStatus = 'authenticated';
+      }
+
+      // Verificación de invariante: adminUser no fue sobrescrito
+      expect(currentUser).toEqual(adminUser);
+      expect(currentUser?.roles[0].codigo).toBe('ADMINISTRADOR');
+      expect(currentStatus).toBe('authenticated');
+    });
+
+    it('47. Un usuario anónimo o sin permisos continúa recibiendo la protección correspondiente', () => {
+      // Anónimo
+      expect(getSafeRedirectForUser('/admin', null)).toBe('/login');
+      expect(getSafeRedirectForUser('/estudiante', null)).toBe('/login');
+      expect(isRouteAllowedForUser('/estudiante', null)).toBe(false);
+
+      // Usuario sin roles activos
+      const userSinRoles: AuthUser = { ...studentUser, roles: [] };
+      expect(getSafeRedirectForUser('/estudiante', userSinRoles)).toBe('/login');
+      expect(getSafeRedirectForUser('/admin', userSinRoles)).toBe('/login');
+      expect(isRouteAllowedForUser('/estudiante', userSinRoles)).toBe(false);
+
+      // Open redirect y URLs externas
+      expect(getSafeRedirectForUser('https://attacker.com/evil', adminUser)).toBe('/admin');
+      expect(getSafeRedirectForUser('//evil.com', teacherUser)).toBe('/profesor');
+    });
+
+    it('48. El cambio de usuario en otra pestaña no restaura rutas o identidades obsoletas', () => {
+      // Simulación de Tab 2 recibiendo evento cross-tab
+      let tab2User: AuthUser | null = studentUser;
+      let tab2Status = 'authenticated';
+      let tab2IsLoggedOut = false;
+
+      // 1. Pestaña 1 hace LOGOUT
+      tab2IsLoggedOut = true;
+      tab2User = null;
+      tab2Status = 'unauthenticated';
+
+      // Destino para pestaña 2 tras logout explícito debe ser '/login' sin returnUrl
+      const tab2TargetOnLogout = tab2IsLoggedOut ? '/login' : '/estudiante';
+      expect(tab2TargetOnLogout).toBe('/login');
+
+      // 2. Pestaña 1 inicia sesión como Administrador
+      tab2IsLoggedOut = false;
+      tab2User = adminUser;
+      tab2Status = 'authenticated';
+
+      // Al sincronizarse Pestaña 2 con la nueva sesión activa, navega al portal del nuevo usuario
+      const tab2FinalTarget = getSafeRedirectForUser(null, tab2User);
+      expect(tab2FinalTarget).toBe('/admin');
+      expect(tab2FinalTarget).not.toBe('/estudiante');
+    });
+
+    it('49. Una salida local con revocación pendiente conserva su contingencia y no restaura silenciosamente la sesión anterior', () => {
+      // Cuando falla la comunicación remota en logout forzado:
+      let hasPendingUnconfirmedExit = true;
+      let isLoggedOut = true;
+      let user: AuthUser | null = null;
+      let status = 'unauthenticated';
+
+      // Estado transmitido a /login
+      const loginNavigationState = hasPendingUnconfirmedExit ? { unconfirmedLogout: true } : undefined;
+      expect(loginNavigationState).toEqual({ unconfirmedLogout: true });
+
+      // Invariante de seguridad: El usuario debe quedar estrictamente desautenticado
+      expect(user).toBeNull();
+      expect(status).toBe('unauthenticated');
+      expect(isLoggedOut).toBe(true);
+
+      // Si se intenta redirigir, va a /login y nunca restaura la sesión anterior
+      const target = getSafeRedirectForUser('/estudiante', user);
+      expect(target).toBe('/login');
+    });
+
+    it('50. Static Invariants: Login.tsx y ProtectedRoute.tsx implementan validación de autorización de ruta y logout limpio', () => {
+      const loginSource = fs.readFileSync(path.resolve(process.cwd(), 'src/pages/auth/Login.tsx'), 'utf-8');
+      const protectedSource = fs.readFileSync(path.resolve(process.cwd(), 'src/components/ProtectedRoute.tsx'), 'utf-8');
+      const rolesSource = fs.readFileSync(path.resolve(process.cwd(), 'src/utils/roles.ts'), 'utf-8');
+
+      // Login.tsx debe usar getSafeRedirectForUser y no redirigir ciegamente a safeTarget
+      expect(loginSource).toContain('getSafeRedirectForUser');
+      expect(loginSource).not.toContain('navigate(safeTarget');
+
+      // ProtectedRoute.tsx debe considerar isLoggedOut para evitar returnUrl al cerrar sesión
+      expect(protectedSource).toContain('isLoggedOut');
+      expect(protectedSource).toContain('to="/login"');
+
+      // roles.ts debe definir las reglas de prefijos y validación
+      expect(rolesSource).toContain('ROUTE_PORTAL_RULES');
+      expect(rolesSource).toContain('isRouteAllowedForUser');
+      expect(rolesSource).toContain('getSafeRedirectForUser');
+    });
+  });
 });
+

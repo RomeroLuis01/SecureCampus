@@ -1,6 +1,5 @@
 import React from 'react'
 import { Outlet, Link } from 'react-router-dom'
-import { ShieldCheck } from 'lucide-react'
 
 export const AuthLayout: React.FC = () => {
   return (
@@ -20,11 +19,6 @@ export const AuthLayout: React.FC = () => {
             </span>
           </div>
         </Link>
-
-        <div className="flex items-center gap-2 text-xs text-secondary-slate">
-          <ShieldCheck className="w-4 h-4 text-primary" />
-          <span className="font-medium hidden sm:inline">Conexión Criptográfica Segura</span>
-        </div>
       </header>
 
       {/* Contenido Central */}

@@ -12,7 +12,15 @@ export interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, children }) => {
-  const { status, user, error, refreshSession, logout } = useAuth();
+  const {
+    status,
+    user,
+    error,
+    refreshSession,
+    logout,
+    isLoggedOut,
+    hasPendingUnconfirmedExit,
+  } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -79,8 +87,20 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
     );
   }
 
-  // 3. No autenticado (401 o sin sesión): Redirigir a /login con returnUrl saneada
+  // 3. No autenticado (401 o sin sesión): Redirigir a /login
   if (status === 'unauthenticated' || !user) {
+    // Si la desautenticación ocurrió por un logout explícito (local o cross-tab),
+    // bajo ninguna circunstancia se debe conservar la ruta privada anterior como returnUrl.
+    if (isLoggedOut) {
+      return (
+        <Navigate
+          to="/login"
+          replace
+          state={hasPendingUnconfirmedExit ? { unconfirmedLogout: true } : undefined}
+        />
+      );
+    }
+
     const rawTarget = location.pathname + location.search + location.hash;
     const safeReturnUrl = sanitizeReturnUrl(rawTarget, '/');
     const loginTarget = safeReturnUrl !== '/'

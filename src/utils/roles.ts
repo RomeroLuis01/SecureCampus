@@ -1,4 +1,5 @@
 import type { AuthUser } from '../services/authClient';
+import { sanitizeReturnUrl } from './url';
 
 export type BackendRoleCode = 'ADMINISTRADOR' | 'JEFE_CARRERA' | 'PROFESOR' | 'ALUMNO';
 export type FrontendRoleAlias = 'admin' | 'jefe_carrera' | 'profesor' | 'estudiante';
@@ -38,6 +39,16 @@ export const VALID_ROLE_ALIASES: readonly FrontendRoleAlias[] = [
   'profesor',
   'estudiante',
 ] as const;
+
+export const ROUTE_PORTAL_RULES: ReadonlyArray<{
+  prefix: string;
+  allowedRoles: readonly AnyRole[];
+}> = [
+  { prefix: '/estudiante', allowedRoles: ['ALUMNO', 'estudiante'] },
+  { prefix: '/profesor', allowedRoles: ['PROFESOR', 'profesor'] },
+  { prefix: '/jefe_carrera', allowedRoles: ['JEFE_CARRERA', 'jefe_carrera'] },
+  { prefix: '/admin', allowedRoles: ['ADMINISTRADOR', 'admin'] },
+];
 
 /**
  * Normalizes any role (backend code or frontend alias) to its canonical BackendRoleCode.
@@ -95,3 +106,81 @@ export function getDefaultRouteForUser(user: AuthUser | null): string {
   if (roleCodes.includes('ALUMNO')) return '/estudiante';
   return '/login';
 }
+
+/**
+ * Normalizes a URL/path string by stripping query parameters and hash fragments,
+ * and ensuring standard single leading slash without trailing slash.
+ */
+export function extractPathname(path: string): string {
+  if (!path || typeof path !== 'string') return '';
+  const trimmed = path.trim().split('?')[0].split('#')[0];
+  const withoutTrailing = trimmed.replace(/\/+$/, '');
+  return withoutTrailing || '/';
+}
+
+/**
+ * Returns the allowed roles for a given relative path, or null if the path is not a recognized protected portal route.
+ */
+export function getAllowedRolesForPath(path: string): readonly AnyRole[] | null {
+  if (!path || typeof path !== 'string') return null;
+
+  const pathname = extractPathname(path);
+
+  for (const rule of ROUTE_PORTAL_RULES) {
+    if (pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`)) {
+      return rule.allowedRoles;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Checks whether an authenticated user is authorized to access a given application path.
+ * Returns true if the path is a recognized portal route and the user possesses the required role.
+ * Returns false if the path is unknown, not a portal, or the user lacks permissions.
+ */
+export function isRouteAllowedForUser(path: string, user: AuthUser | null): boolean {
+  if (!user || !path) {
+    return false;
+  }
+
+  const allowedRoles = getAllowedRolesForPath(path);
+  if (!allowedRoles) {
+    return false;
+  }
+
+  return userHasAnyRole(user, allowedRoles as AnyRole[]);
+}
+
+/**
+ * Determines the safe, authorized redirect destination for a user.
+ * If candidateUrl is provided, safe, and the user has permission to access it, returns candidateUrl.
+ * Otherwise, discards candidateUrl and returns the user's default route.
+ */
+export function getSafeRedirectForUser(
+  candidateUrl: string | null | undefined,
+  user: AuthUser | null
+): string {
+  if (!user) {
+    return '/login';
+  }
+
+  const defaultRoute = getDefaultRouteForUser(user);
+
+  if (!candidateUrl) {
+    return defaultRoute;
+  }
+
+  const safeTarget = sanitizeReturnUrl(candidateUrl, '');
+  if (!safeTarget || safeTarget === '/' || safeTarget === '/login') {
+    return defaultRoute;
+  }
+
+  if (isRouteAllowedForUser(safeTarget, user)) {
+    return safeTarget;
+  }
+
+  return defaultRoute;
+}
+
