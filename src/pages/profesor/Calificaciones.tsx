@@ -17,7 +17,6 @@ import {
   Input,
 } from '../../components'
 import { mockTeacherGroups } from '../../services/mockData'
-import type { StudentGradeEntry } from '../../services/mockData'
 
 export const TeacherGradesView: React.FC = () => {
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0)
@@ -28,23 +27,62 @@ export const TeacherGradesView: React.FC = () => {
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'info'; text: string } | null>(null)
 
   const currentGroup = groupsData[selectedGroupIndex]
+  const numParciales = currentGroup.numeroParciales || 3
+  const partialNumbers = Array.from({ length: numParciales }, (_, i) => i + 1)
 
-  // Actualizar calificación de un estudiante
-  const handleGradeChange = (studentId: string, field: 'parcial1' | 'parcial2' | 'proyecto', valStr: string) => {
-    const val = parseFloat(valStr) || 0
-    const clamped = Math.min(10, Math.max(0, val))
+  // Actualizar calificación de un estudiante por parcial
+  const handleGradeChange = (studentId: string, partialNum: number, valStr: string) => {
+    const trimmed = valStr.trim()
+    const val = trimmed === '' ? null : Math.min(100, Math.max(0, parseFloat(trimmed)))
 
     setGroupsData((prev) => {
       const next = [...prev]
       const grp = { ...next[selectedGroupIndex] }
+      const groupNumParciales = grp.numeroParciales || 3
+
       grp.estudiantes = grp.estudiantes.map((s) => {
         if (s.id === studentId) {
-          const updated: StudentGradeEntry = { ...s, [field]: clamped }
-          // Recálculo de promedio final ponderado
-          const finalScore = Number(((updated.parcial1 + updated.parcial2 + updated.proyecto) / 3).toFixed(1))
-          updated.final = finalScore
-          updated.estado = finalScore >= 7.0 ? 'APROBADO' : 'REPROBADO'
-          return updated
+          const updatedParciales: Record<number, number | null> = {
+            ...(s.parciales || {}),
+            ...(s.parcial1 !== undefined ? { 1: s.parcial1 } : {}),
+            ...(s.parcial2 !== undefined ? { 2: s.parcial2 } : {}),
+            ...(s.parcial3 !== undefined ? { 3: s.parcial3 } : {}),
+            ...(s.parcial4 !== undefined ? { 4: s.parcial4 } : {}),
+            [partialNum]: val,
+          }
+
+          // Verificar si todos los parciales configurados han sido capturados
+          let allCaptured = true
+          let sum = 0
+          for (let i = 1; i <= groupNumParciales; i++) {
+            const score = updatedParciales[i]
+            if (score === null || score === undefined || isNaN(score)) {
+              allCaptured = false
+              break
+            }
+            sum += score
+          }
+
+          let finalScore: number | null = null
+          let estado: 'APROBADO' | 'REPROBADO' | 'PENDIENTE' = 'PENDIENTE'
+
+          if (allCaptured) {
+            // Media aritmética simple con redondeo estándar half-up a entero institucional
+            const mean = sum / groupNumParciales
+            finalScore = Math.round(mean)
+            estado = finalScore >= 70 ? 'APROBADO' : 'REPROBADO'
+          }
+
+          return {
+            ...s,
+            parciales: updatedParciales,
+            parcial1: updatedParciales[1] ?? null,
+            parcial2: updatedParciales[2] ?? null,
+            parcial3: updatedParciales[3] ?? null,
+            parcial4: updatedParciales[4] ?? null,
+            final: finalScore,
+            estado,
+          }
         }
         return s
       })
@@ -59,7 +97,7 @@ export const TeacherGradesView: React.FC = () => {
       setIsSaving(false)
       setFeedbackMessage({
         type: 'info',
-        text: 'Borrador de calificaciones guardado temporalmente en el servidor.',
+        text: 'Borrador de calificaciones parciales guardado temporalmente en el servidor.',
       })
       setTimeout(() => setFeedbackMessage(null), 3500)
     }, 600)
@@ -132,7 +170,8 @@ export const TeacherGradesView: React.FC = () => {
             Captura de Calificaciones Oficiales
           </h1>
           <p className="text-xs text-secondary-slate mt-0.5">
-            {currentGroup.materia} • Grupo {currentGroup.grupo} • Aula {currentGroup.aula}
+            {currentGroup.materia} • Grupo {currentGroup.grupo} • Aula {currentGroup.aula} •{' '}
+            <span className="font-bold text-primary font-mono">{numParciales} Parciales</span> configurados
           </p>
         </div>
 
@@ -143,7 +182,7 @@ export const TeacherGradesView: React.FC = () => {
               onChange={(e) => setSelectedGroupIndex(Number(e.target.value))}
               options={groupsData.map((g, idx) => ({
                 value: idx,
-                label: `${g.clave} - Grupo ${g.grupo} (${g.estatusActa})`,
+                label: `${g.clave} - Grupo ${g.grupo} (${g.numeroParciales}P - ${g.estatusActa})`,
               }))}
             />
           </div>
@@ -183,7 +222,7 @@ export const TeacherGradesView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Matriz de Captura Interactiva */}
+      {/* 2. Matriz de Captura Interactiva con Parciales Dinámicos */}
       <Card>
         <CardBody className="p-0 overflow-x-auto">
           <table className="w-full border-collapse text-left font-sans">
@@ -192,9 +231,11 @@ export const TeacherGradesView: React.FC = () => {
                 <th className="py-3 px-4">Matrícula</th>
                 <th className="py-3 px-4">Estudiante</th>
                 <th className="py-3 px-4 text-center">Asistencia</th>
-                <th className="py-3 px-4 text-center w-28">Parcial 1</th>
-                <th className="py-3 px-4 text-center w-28">Parcial 2</th>
-                <th className="py-3 px-4 text-center w-28">Proyecto</th>
+                {partialNumbers.map((pNum) => (
+                  <th key={pNum} className="py-3 px-4 text-center w-24">
+                    Parcial {pNum}
+                  </th>
+                ))}
                 <th className="py-3 px-4 text-right w-32">Calificación Final</th>
                 <th className="py-3 px-4 text-center w-32">Estatus</th>
               </tr>
@@ -212,75 +253,67 @@ export const TeacherGradesView: React.FC = () => {
                     {s.asistencia}%
                   </td>
 
-                  {/* Input Parcial 1 */}
-                  <td className="py-2 px-3 text-center">
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="10"
-                      disabled={isClosed}
-                      value={s.parcial1}
-                      onChange={(e) => handleGradeChange(s.id, 'parcial1', e.target.value)}
-                      className={`w-20 h-8 text-center font-mono font-semibold rounded border outline-none transition-colors ${
-                        isClosed
-                          ? 'bg-surface-canvas text-secondary-muted border-border cursor-not-allowed'
-                          : 'bg-surface-lowest text-secondary border-border-strong focus:border-tertiary focus:ring-1 focus:ring-tertiary'
-                      }`}
-                    />
-                  </td>
+                  {/* Celdas dinámicas de parciales según la configuración del grupo */}
+                  {partialNumbers.map((pNum) => {
+                    const val =
+                      s.parciales?.[pNum] ??
+                      (pNum === 1
+                        ? s.parcial1
+                        : pNum === 2
+                        ? s.parcial2
+                        : pNum === 3
+                        ? s.parcial3
+                        : pNum === 4
+                        ? s.parcial4
+                        : null) ??
+                      ''
+                    return (
+                      <td key={pNum} className="py-2 px-3 text-center">
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          max="100"
+                          disabled={isClosed}
+                          value={val}
+                          onChange={(e) => handleGradeChange(s.id, pNum, e.target.value)}
+                          className={`w-20 h-8 text-center font-mono font-semibold rounded border outline-none transition-colors ${
+                            isClosed
+                              ? 'bg-surface-canvas text-secondary-muted border-border cursor-not-allowed'
+                              : 'bg-surface-lowest text-secondary border-border-strong focus:border-tertiary focus:ring-1 focus:ring-tertiary'
+                          }`}
+                        />
+                      </td>
+                    )
+                  })}
 
-                  {/* Input Parcial 2 */}
-                  <td className="py-2 px-3 text-center">
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="10"
-                      disabled={isClosed}
-                      value={s.parcial2}
-                      onChange={(e) => handleGradeChange(s.id, 'parcial2', e.target.value)}
-                      className={`w-20 h-8 text-center font-mono font-semibold rounded border outline-none transition-colors ${
-                        isClosed
-                          ? 'bg-surface-canvas text-secondary-muted border-border cursor-not-allowed'
-                          : 'bg-surface-lowest text-secondary border-border-strong focus:border-tertiary focus:ring-1 focus:ring-tertiary'
-                      }`}
-                    />
-                  </td>
-
-                  {/* Input Proyecto */}
-                  <td className="py-2 px-3 text-center">
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="10"
-                      disabled={isClosed}
-                      value={s.proyecto}
-                      onChange={(e) => handleGradeChange(s.id, 'proyecto', e.target.value)}
-                      className={`w-20 h-8 text-center font-mono font-semibold rounded border outline-none transition-colors ${
-                        isClosed
-                          ? 'bg-surface-canvas text-secondary-muted border-border cursor-not-allowed'
-                          : 'bg-surface-lowest text-secondary border-border-strong focus:border-tertiary focus:ring-1 focus:ring-tertiary'
-                      }`}
-                    />
-                  </td>
-
-                  {/* Final Calculado */}
+                  {/* Final Calculado Estrictamente Entero */}
                   <td className="py-2.5 px-4 text-right">
-                    <span
-                      className={`font-mono text-sm font-bold tabular-nums ${
-                        s.final >= 7.0 ? 'text-secondary' : 'text-academic-danger'
-                      }`}
-                    >
-                      {s.final.toFixed(1)}
-                    </span>
+                    {s.final !== null && s.final !== undefined ? (
+                      <span
+                        className={`font-mono text-sm font-bold tabular-nums ${
+                          s.final >= 70 ? 'text-secondary' : 'text-academic-danger'
+                        }`}
+                      >
+                        {s.final}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-secondary-slate font-normal italic">
+                        Pendiente
+                      </span>
+                    )}
                   </td>
 
                   {/* Estatus */}
                   <td className="py-2.5 px-4 text-center">
                     <Badge
-                      variant={s.estado === 'APROBADO' ? 'success' : 'danger'}
+                      variant={
+                        s.estado === 'APROBADO'
+                          ? 'success'
+                          : s.estado === 'REPROBADO'
+                          ? 'danger'
+                          : 'warning'
+                      }
                       dot
                       size="sm"
                     >
@@ -303,7 +336,7 @@ export const TeacherGradesView: React.FC = () => {
           </span>
         </div>
         <div className="font-mono text-[11px] text-secondary-muted">
-          Escala: 0.0 a 10.0 • Mínimo aprobatorio: 7.0
+          Escala: 0 a 100 • Calificación final entera (redondeo estándar) • Mínimo aprobatorio: 70
         </div>
       </div>
 

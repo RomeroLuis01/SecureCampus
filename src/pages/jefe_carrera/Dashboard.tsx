@@ -52,6 +52,7 @@ export const JefeDashboard: React.FC = () => {
   const [newGroupCodigo, setNewGroupCodigo] = useState('')
   const [newGroupAula, setNewGroupAula] = useState('')
   const [newGroupDocente, setNewGroupDocente] = useState('')
+  const [newGroupParciales, setNewGroupParciales] = useState<number>(3)
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -103,6 +104,7 @@ export const JefeDashboard: React.FC = () => {
       capacidadMaxima: 30,
       sobrecuposEmitidos: 0,
       estado: 'ABIERTO',
+      numeroParciales: Number(newGroupParciales) || 3,
     }
     setGroups([newGrp, ...groups])
     setIsAddGroupModalOpen(false)
@@ -110,6 +112,7 @@ export const JefeDashboard: React.FC = () => {
     setNewGroupClave('')
     setNewGroupCodigo('')
     setNewGroupAula('')
+    setNewGroupParciales(3)
     showToast('Grupo aperturado exitosamente. Validación espacial sin colisiones de aula.')
   }
 
@@ -706,6 +709,16 @@ export const JefeDashboard: React.FC = () => {
               required
             />
           </div>
+          <Input
+            label="Número de Parciales"
+            type="number"
+            min={1}
+            max={6}
+            value={newGroupParciales}
+            onChange={(e) => setNewGroupParciales(Math.max(1, Math.min(6, parseInt(e.target.value, 10) || 1)))}
+            helperText="Rango institucional permitido: 1 a 6 parciales (por defecto 3)."
+            required
+          />
           <div className="flex justify-end gap-2 pt-2 border-t border-border-subtle">
             <Button variant="ghost" type="button" onClick={() => setIsAddGroupModalOpen(false)}>
               Cancelar

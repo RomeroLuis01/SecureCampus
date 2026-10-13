@@ -1,4 +1,11 @@
 import { query } from '../config/database.js';
+import { roundToDecimals } from './grade.service.js';
+
+export interface PartialGradeItem {
+  numeroParcial: number;
+  valor: number | null;
+  estado: 'PENDIENTE' | 'CAPTURADA';
+}
 
 export interface SubjectGradeItem {
   inscripcionId: string;
@@ -7,6 +14,8 @@ export interface SubjectGradeItem {
   creditos: number;
   profesor: string;
   claveGrupo: string;
+  numeroParciales?: number;
+  parciales?: PartialGradeItem[];
   estadoInscripcion: string;
   calificacionFinal: number | null;
   estadoCalificacion: 'PENDIENTE' | 'CAPTURADA';
@@ -40,6 +49,7 @@ export interface StudentGradesResponse {
 /**
  * Retrieves all grades for the authenticated student identified strictly by their personaId.
  * Never accepts external student IDs or matricula from client inputs.
+ * Ensures subject final grades are integers, while general average maintains decimal precision.
  */
 export async function getStudentGradesByPersonaId(personaId: string): Promise<StudentGradesResponse> {
   const sql = `
@@ -58,6 +68,7 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
       m.creditos AS materia_creditos,
       g.grupo_id,
       g.clave_grupo,
+      COALESCE(g.numero_parciales, 3) AS numero_parciales,
       i.inscripcion_id,
       i.estado AS inscripcion_estado,
       cal.calificacion_id,
@@ -97,6 +108,7 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
     materia_creditos: number;
     grupo_id: string;
     clave_grupo: string;
+    numero_parciales: number;
     inscripcion_id: string;
     inscripcion_estado: string;
     calificacion_id: string | null;
@@ -107,7 +119,6 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
   }>(sql, [personaId]);
 
   if (result.rows.length === 0) {
-    // If student has no enrollments yet, fetch student identity metadata if available
     const studentInfo = await query<{ matricula: string; nombre_completo: string }>(
       `SELECT a.matricula, pe.nombre_completo 
        FROM academico.alumnos a 
@@ -133,6 +144,38 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
 
   const matricula = result.rows[0].matricula;
   const alumnoNombre = result.rows[0].alumno_nombre;
+
+  // Query partial grades for all enrollments
+  const enrollmentIds = result.rows.map((r) => r.inscripcion_id);
+  const partialsMap = new Map<string, PartialGradeItem[]>();
+
+  try {
+    const partialsQuery = await query<{
+      inscripcion_id: string;
+      numero_parcial: number;
+      valor_calificacion: string | number | null;
+      estado: 'PENDIENTE' | 'CAPTURADA';
+    }>(
+      `SELECT inscripcion_id, numero_parcial, valor_calificacion, estado
+       FROM academico.calificaciones_parciales
+       WHERE inscripcion_id = ANY($1)
+       ORDER BY numero_parcial ASC`,
+      [enrollmentIds]
+    );
+
+    for (const p of partialsQuery.rows) {
+      if (!partialsMap.has(p.inscripcion_id)) {
+        partialsMap.set(p.inscripcion_id, []);
+      }
+      partialsMap.get(p.inscripcion_id)!.push({
+        numeroParcial: p.numero_parcial,
+        valor: p.valor_calificacion !== null ? parseFloat(String(p.valor_calificacion)) : null,
+        estado: p.estado,
+      });
+    }
+  } catch {
+    // If table doesn't have records yet, continue gracefully
+  }
 
   // Group by academic period
   const periodsMap = new Map<string, AcademicPeriodGrades>();
@@ -163,11 +206,12 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
     const period = periodsMap.get(periodId)!;
     const creditos = Number(row.materia_creditos) || 0;
 
+    // The final grade must strictly be an integer (without decimals)
     let calificacionFinal: number | null = null;
     if (row.valor_calificacion !== null && row.valor_calificacion !== undefined) {
       const parsed = parseFloat(String(row.valor_calificacion));
       if (!isNaN(parsed)) {
-        calificacionFinal = parsed;
+        calificacionFinal = Math.round(parsed);
       }
     }
 
@@ -176,11 +220,24 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
         ? 'CAPTURADA'
         : 'PENDIENTE';
 
-    // Business evaluation rule: passing grade is >= 70 on 0-100 scale, or >= 7.0 on 0-10 scale
     let estado: 'APROBADA' | 'REPROBADA' | 'PENDIENTE' = 'PENDIENTE';
     if (estadoCalificacion === 'CAPTURADA' && calificacionFinal !== null) {
       const isPassing = calificacionFinal >= 70 || (calificacionFinal >= 7.0 && calificacionFinal <= 10.0);
       estado = isPassing ? 'APROBADA' : 'REPROBADA';
+    }
+
+    const existingPartials = partialsMap.get(row.inscripcion_id) || [];
+    const numParciales = row.numero_parciales || 3;
+    const partialsList: PartialGradeItem[] = [];
+    for (let i = 1; i <= numParciales; i++) {
+      const found = existingPartials.find((p) => p.numeroParcial === i);
+      partialsList.push(
+        found || {
+          numeroParcial: i,
+          valor: null,
+          estado: 'PENDIENTE',
+        }
+      );
     }
 
     const subjectItem: SubjectGradeItem = {
@@ -190,6 +247,8 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
       creditos,
       profesor: row.profesor_nombre,
       claveGrupo: row.clave_grupo,
+      numeroParciales: numParciales,
+      parciales: partialsList,
       estadoInscripcion: row.inscripcion_estado,
       calificacionFinal,
       estadoCalificacion,
@@ -210,7 +269,7 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
     }
   }
 
-  // Calculate averages per period
+  // Calculate averages per period (decimal with 2 digits precision)
   for (const period of periodsMap.values()) {
     period.resumen.totalMaterias = period.materias.length;
 
@@ -220,15 +279,16 @@ export async function getStudentGradesByPersonaId(personaId: string): Promise<St
 
     if (capturedGrades.length > 0) {
       const sum = capturedGrades.reduce((acc, m) => acc + (m.calificacionFinal ?? 0), 0);
-      period.resumen.promedio = Math.round((sum / capturedGrades.length) * 100) / 100;
+      period.resumen.promedio = roundToDecimals(sum / capturedGrades.length, 2);
     } else {
       period.resumen.promedio = null;
     }
   }
 
+  // Calculate general average (decimal with 2 digits precision)
   const promedioGeneral =
     totalCalificacionesCount > 0
-      ? Math.round((totalCalificacionesSum / totalCalificacionesCount) * 100) / 100
+      ? roundToDecimals(totalCalificacionesSum / totalCalificacionesCount, 2)
       : null;
 
   return {

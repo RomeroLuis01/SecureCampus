@@ -42,6 +42,7 @@ export const CurricularOfferView: React.FC = () => {
     horario: '07:00 - 09:00',
     dias: 'Lun, Mié',
     capacidadMaxima: 30,
+    numeroParciales: 3,
   })
 
   const showToast = (title: string, detail: string) => {
@@ -58,6 +59,15 @@ export const CurricularOfferView: React.FC = () => {
 
   const handleCreateGroup = (e: React.FormEvent) => {
     e.preventDefault()
+    const numParciales = Number(newGroup.numeroParciales)
+    if (!Number.isInteger(numParciales) || numParciales < 1 || numParciales > 6) {
+      showToast(
+        'Validación de Apertura Fallida',
+        'El número de parciales es obligatorio y debe ser un entero positivo entre 1 y 6.',
+      )
+      return
+    }
+
     const grp: CurricularGroup = {
       id: `grp-${Date.now()}`,
       claveMateria: newGroup.claveMateria || 'CS-605',
@@ -74,6 +84,7 @@ export const CurricularOfferView: React.FC = () => {
       dias: newGroup.dias,
       inscritos: 0,
       capacidadMaxima: Number(newGroup.capacidadMaxima),
+      numeroParciales: numParciales,
       sobrecuposEmitidos: 0,
       estado: 'ABIERTO',
     }
@@ -82,7 +93,7 @@ export const CurricularOfferView: React.FC = () => {
     setIsCreateModalOpen(false)
     showToast(
       'Grupo Aperturado Exitosamente',
-      `Sección ${grp.codigoGrupo} (${grp.claveMateria}) asignada a ${grp.aula} sin traslapes detectados.`,
+      `Sección ${grp.codigoGrupo} (${grp.claveMateria}) aperturada con ${grp.numeroParciales} parciales configurados en ${grp.aula}.`,
     )
   }
 
@@ -133,9 +144,19 @@ export const CurricularOfferView: React.FC = () => {
             <span className="font-mono text-[10px] font-bold text-primary bg-primary/10 px-1 rounded">
               Grupo: {grp.codigoGrupo}
             </span>
-            <span className="text-[10px] text-secondary-slate">Sem {grp.semestre} • {grp.turno}</span>
+            <span className="text-[10px] text-secondary-slate">Sem {grp.semestre} • {grp.turno} • {grp.numeroParciales} Parciales</span>
           </div>
         </div>
+      ),
+    },
+    {
+      key: 'parciales',
+      title: 'Parciales',
+      align: 'center',
+      render: (grp) => (
+        <span className="font-mono text-xs font-bold text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/20">
+          {grp.numeroParciales} P
+        </span>
       ),
     },
     {
@@ -440,7 +461,7 @@ export const CurricularOfferView: React.FC = () => {
                     <span className="text-secondary-slate block text-[11px]">Docente Asignado:</span>
                     <strong className="text-secondary block">{focusedGroup.docenteTitular}</strong>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border-subtle">
+                  <div className="grid grid-cols-3 gap-2 pt-1 border-t border-border-subtle">
                     <div>
                       <span className="text-secondary-slate block text-[10px]">Aula:</span>
                       <strong className="text-secondary">{focusedGroup.aula}</strong>
@@ -448,6 +469,10 @@ export const CurricularOfferView: React.FC = () => {
                     <div>
                       <span className="text-secondary-slate block text-[10px]">Horario:</span>
                       <strong className="text-secondary">{focusedGroup.horario}</strong>
+                    </div>
+                    <div>
+                      <span className="text-secondary-slate block text-[10px]">Parciales:</span>
+                      <strong className="text-primary font-mono font-bold">{focusedGroup.numeroParciales} P</strong>
                     </div>
                   </div>
                 </div>
@@ -602,13 +627,27 @@ export const CurricularOfferView: React.FC = () => {
             />
           </div>
 
-          <Input
-            label="Capacidad Máxima de Alumnos"
-            type="number"
-            value={newGroup.capacidadMaxima.toString()}
-            onChange={(e) => setNewGroup({ ...newGroup, capacidadMaxima: Number(e.target.value) })}
-            required
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Capacidad Máxima de Alumnos"
+              type="number"
+              min="1"
+              value={newGroup.capacidadMaxima.toString()}
+              onChange={(e) => setNewGroup({ ...newGroup, capacidadMaxima: Number(e.target.value) })}
+              required
+            />
+            <Input
+              label="Número de parciales"
+              type="number"
+              min="1"
+              max="6"
+              step="1"
+              value={newGroup.numeroParciales.toString()}
+              onChange={(e) => setNewGroup({ ...newGroup, numeroParciales: Number(e.target.value) })}
+              helperText="Reglamentario: 1 a 6 parciales"
+              required
+            />
+          </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-border-subtle">
             <Button variant="ghost" type="button" onClick={() => setIsCreateModalOpen(false)}>

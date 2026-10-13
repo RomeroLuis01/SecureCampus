@@ -19,6 +19,7 @@ export interface AuthUserProfile {
   permisos: string[];
   estadoCredencial?: string | null;
   bloqueadoHasta?: Date | null;
+  estadoAlumno?: string | null;
 }
 
 export interface LoginResult {
@@ -155,6 +156,7 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
     telefono: string | null;
     curp: string | null;
     matricula: string | null;
+    estado_alumno: string | null;
     numero_empleado: string | null;
     carrera_codigo: string | null;
     carrera_nombre: string | null;
@@ -170,6 +172,7 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
        p.telefono,
        p.curp,
        a.matricula,
+       a.estado AS estado_alumno,
        pr.numero_empleado,
        COALESCE(c_ur.codigo, c_ac.codigo) AS carrera_codigo,
        COALESCE(c_ur.nombre, c_ac.nombre) AS carrera_nombre,
@@ -238,6 +241,7 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
     permisos: Array.from(permisosSet),
     estadoCredencial: u.estado_credencial ?? null,
     bloqueadoHasta: u.bloqueado_hasta ? new Date(u.bloqueado_hasta) : null,
+    estadoAlumno: u.estado_alumno ?? null,
   };
 }
 

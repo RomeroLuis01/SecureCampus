@@ -214,6 +214,34 @@ COMMENT ON FUNCTION academico.fn_propagar_periodo_a_sesiones() IS 'Mantiene sesi
 
 
 --
+-- Name: fn_proteger_cambio_parciales_grupo(); Type: FUNCTION; Schema: academico; Owner: -
+--
+
+CREATE FUNCTION academico.fn_proteger_cambio_parciales_grupo() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_max_parcial_existente integer;
+BEGIN
+    IF NEW.numero_parciales < OLD.numero_parciales THEN
+        SELECT COALESCE(MAX(cp.numero_parcial), 0) INTO v_max_parcial_existente
+        FROM academico.inscripciones i
+        JOIN academico.calificaciones_parciales cp ON cp.inscripcion_id = i.inscripcion_id
+        WHERE i.grupo_id = NEW.grupo_id AND cp.estado = 'CAPTURADA';
+
+        IF v_max_parcial_existente > NEW.numero_parciales THEN
+            RAISE EXCEPTION 'No se puede reducir a % parciales: el grupo ya tiene calificaciones registradas en el parcial %',
+                NEW.numero_parciales, v_max_parcial_existente
+                USING ERRCODE = 'integrity_constraint_violation';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: fn_registrar_cambio_calificacion(); Type: FUNCTION; Schema: academico; Owner: -
 --
 
@@ -312,6 +340,38 @@ BEGIN
         INSERT INTO academico.historial_estado_inscripcion
             (inscripcion_id, estado_anterior, estado_nuevo, cambiado_por_usuario_id)
         VALUES (NEW.inscripcion_id, OLD.estado, NEW.estado, seguridad.fn_usuario_actual());
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: fn_sincronizar_calificaciones_cambio_parciales(); Type: FUNCTION; Schema: academico; Owner: -
+--
+
+CREATE FUNCTION academico.fn_sincronizar_calificaciones_cambio_parciales() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.numero_parciales <> OLD.numero_parciales THEN
+        -- Si aumento o cambio el numero de parciales, cualquier inscripcion que tenga
+        -- menos evaluaciones capturadas que el nuevo numero_parciales pasa a PENDIENTE
+        UPDATE academico.calificaciones c
+        SET valor_calificacion = NULL,
+            estado = 'PENDIENTE',
+            actualizado_en = CURRENT_TIMESTAMP
+        FROM academico.inscripciones i
+        WHERE i.inscripcion_id = c.inscripcion_id
+          AND i.grupo_id = NEW.grupo_id
+          AND (
+              SELECT COUNT(*)
+              FROM academico.calificaciones_parciales cp
+              WHERE cp.inscripcion_id = i.inscripcion_id
+                AND cp.estado = 'CAPTURADA'
+                AND cp.numero_parcial <= NEW.numero_parciales
+          ) < NEW.numero_parciales;
     END IF;
 
     RETURN NEW;
@@ -468,6 +528,45 @@ BEGIN
         RAISE EXCEPTION
             'No se puede registrar calificacion: la inscripcion % esta en estado %',
             NEW.inscripcion_id, v_estado
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: fn_validar_parcial_pertenece_grupo(); Type: FUNCTION; Schema: academico; Owner: -
+--
+
+CREATE FUNCTION academico.fn_validar_parcial_pertenece_grupo() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_numero_parciales integer;
+    v_estado_inscripcion varchar(20);
+BEGIN
+    SELECT g.numero_parciales, i.estado
+    INTO v_numero_parciales, v_estado_inscripcion
+    FROM academico.inscripciones i
+    JOIN academico.grupos g ON g.grupo_id = i.grupo_id
+    WHERE i.inscripcion_id = NEW.inscripcion_id;
+
+    IF v_numero_parciales IS NULL THEN
+        RAISE EXCEPTION 'No se encontro el grupo correspondiente a la inscripcion %', NEW.inscripcion_id
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
+    IF v_estado_inscripcion NOT IN ('INSCRITO', 'COMPLETADA') THEN
+        RAISE EXCEPTION 'No se puede capturar calificacion parcial: la inscripcion % esta en estado %',
+            NEW.inscripcion_id, v_estado_inscripcion
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
+    IF NEW.numero_parcial > v_numero_parciales THEN
+        RAISE EXCEPTION 'El parcial % no pertenece al grupo: el grupo solo tiene % parcial(es) configurados',
+            NEW.numero_parcial, v_numero_parciales
             USING ERRCODE = 'integrity_constraint_violation';
     END IF;
 
@@ -825,6 +924,57 @@ END;
 $$;
 
 
+--
+-- Name: fn_validar_alumno_activo_solicitud(); Type: FUNCTION; Schema: solicitudes; Owner: -
+--
+
+CREATE FUNCTION solicitudes.fn_validar_alumno_activo_solicitud() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_estado_alumno varchar(20);
+    v_es_alumno boolean;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1
+        FROM seguridad.usuarios_roles ur
+        JOIN seguridad.roles r ON r.rol_id = ur.rol_id
+        WHERE ur.usuario_id = NEW.solicitante_usuario_id AND r.codigo = 'ALUMNO'
+    ) INTO v_es_alumno;
+
+    IF NOT v_es_alumno THEN
+        SELECT EXISTS (
+            SELECT 1
+            FROM seguridad.usuarios u
+            JOIN academico.alumnos a ON a.persona_id = u.persona_id
+            WHERE u.usuario_id = NEW.solicitante_usuario_id
+        ) INTO v_es_alumno;
+    END IF;
+
+    IF v_es_alumno THEN
+        SELECT a.estado INTO v_estado_alumno
+        FROM seguridad.usuarios u
+        JOIN academico.alumnos a ON a.persona_id = u.persona_id
+        WHERE u.usuario_id = NEW.solicitante_usuario_id
+        FOR SHARE OF a;
+
+        IF v_estado_alumno IS NULL THEN
+            RAISE EXCEPTION 'El solicitante no cuenta con expediente de alumno registrado'
+                USING ERRCODE = 'integrity_constraint_violation';
+        END IF;
+
+        IF v_estado_alumno <> 'ACTIVO' THEN
+            RAISE EXCEPTION 'Acceso denegado: Únicamente los alumnos con estatus académico ACTIVO pueden generar solicitudes documentales (estado actual: %)',
+                v_estado_alumno
+                USING ERRCODE = 'integrity_constraint_violation';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -907,6 +1057,7 @@ CREATE TABLE academico.calificaciones (
     actualizado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT ck_calificaciones_coherencia_captura CHECK (((((estado)::text = 'PENDIENTE'::text) AND (valor_calificacion IS NULL) AND (capturada_por_usuario_id IS NULL) AND (capturada_en IS NULL)) OR (((estado)::text = 'CAPTURADA'::text) AND (valor_calificacion IS NOT NULL) AND (capturada_por_usuario_id IS NOT NULL) AND (capturada_en IS NOT NULL)))),
     CONSTRAINT ck_calificaciones_estado CHECK (((estado)::text = ANY ((ARRAY['PENDIENTE'::character varying, 'CAPTURADA'::character varying])::text[]))),
+    CONSTRAINT ck_calificaciones_final_entera CHECK (((valor_calificacion IS NULL) OR (valor_calificacion = round(valor_calificacion)))),
     CONSTRAINT ck_calificaciones_rango CHECK (((valor_calificacion IS NULL) OR ((valor_calificacion >= (0)::numeric) AND (valor_calificacion <= (100)::numeric))))
 );
 
@@ -916,6 +1067,42 @@ CREATE TABLE academico.calificaciones (
 --
 
 COMMENT ON TABLE academico.calificaciones IS 'Una calificacion final vigente por inscripcion. La escala se acota a 0-100; ajustar si la institucion usa otra.';
+
+
+--
+-- Name: CONSTRAINT ck_calificaciones_final_entera ON calificaciones; Type: COMMENT; Schema: academico; Owner: -
+--
+
+COMMENT ON CONSTRAINT ck_calificaciones_final_entera ON academico.calificaciones IS 'La calificacion final oficial de la materia debe ser un numero entero sin parte decimal.';
+
+
+--
+-- Name: calificaciones_parciales; Type: TABLE; Schema: academico; Owner: -
+--
+
+CREATE TABLE academico.calificaciones_parciales (
+    calificacion_parcial_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    inscripcion_id uuid NOT NULL,
+    numero_parcial integer NOT NULL,
+    valor_calificacion numeric(5,2),
+    estado character varying(20) DEFAULT 'PENDIENTE'::character varying NOT NULL,
+    capturada_por_usuario_id uuid,
+    capturada_en timestamp with time zone,
+    actualizada_por_usuario_id uuid,
+    creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    actualizado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT ck_calificaciones_parciales_coherencia CHECK (((((estado)::text = 'PENDIENTE'::text) AND (valor_calificacion IS NULL) AND (capturada_por_usuario_id IS NULL) AND (capturada_en IS NULL)) OR (((estado)::text = 'CAPTURADA'::text) AND (valor_calificacion IS NOT NULL) AND (capturada_por_usuario_id IS NOT NULL) AND (capturada_en IS NOT NULL)))),
+    CONSTRAINT ck_calificaciones_parciales_estado CHECK (((estado)::text = ANY ((ARRAY['PENDIENTE'::character varying, 'CAPTURADA'::character varying])::text[]))),
+    CONSTRAINT ck_calificaciones_parciales_numero CHECK (((numero_parcial >= 1) AND (numero_parcial <= 6))),
+    CONSTRAINT ck_calificaciones_parciales_rango CHECK (((valor_calificacion IS NULL) OR ((valor_calificacion >= (0)::numeric) AND (valor_calificacion <= (100)::numeric))))
+);
+
+
+--
+-- Name: TABLE calificaciones_parciales; Type: COMMENT; Schema: academico; Owner: -
+--
+
+COMMENT ON TABLE academico.calificaciones_parciales IS 'Evaluaciones parciales capturadas para cada inscripcion segun el numero de parciales configurado en el grupo.';
 
 
 --
@@ -946,9 +1133,11 @@ CREATE TABLE academico.grupos (
     estado character varying(20) DEFAULT 'PLANEADO'::character varying NOT NULL,
     creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     actualizado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    numero_parciales integer DEFAULT 3 NOT NULL,
     CONSTRAINT ck_grupos_clave_no_vacia CHECK ((btrim((clave_grupo)::text) <> ''::text)),
     CONSTRAINT ck_grupos_cupo CHECK (((cupo_maximo IS NULL) OR (cupo_maximo > 0))),
-    CONSTRAINT ck_grupos_estado CHECK (((estado)::text = ANY ((ARRAY['PLANEADO'::character varying, 'ABIERTO'::character varying, 'CERRADO'::character varying, 'CANCELADO'::character varying])::text[])))
+    CONSTRAINT ck_grupos_estado CHECK (((estado)::text = ANY ((ARRAY['PLANEADO'::character varying, 'ABIERTO'::character varying, 'CERRADO'::character varying, 'CANCELADO'::character varying])::text[]))),
+    CONSTRAINT ck_grupos_numero_parciales CHECK (((numero_parciales >= 1) AND (numero_parciales <= 6)))
 );
 
 
@@ -957,6 +1146,13 @@ CREATE TABLE academico.grupos (
 --
 
 COMMENT ON COLUMN academico.grupos.carrera_id IS 'Desnormalizacion controlada: la asigna un trigger y la FK compuesta impide que se desvie del plan de estudios.';
+
+
+--
+-- Name: COLUMN grupos.numero_parciales; Type: COMMENT; Schema: academico; Owner: -
+--
+
+COMMENT ON COLUMN academico.grupos.numero_parciales IS 'Numero de evaluaciones parciales configuradas para el grupo al momento de su apertura (rango reglamentario 1 a 6, por defecto 3).';
 
 
 --
@@ -1676,6 +1872,14 @@ ALTER TABLE ONLY academico.asignaciones_profesor_grupo
 
 
 --
+-- Name: calificaciones_parciales calificaciones_parciales_pkey; Type: CONSTRAINT; Schema: academico; Owner: -
+--
+
+ALTER TABLE ONLY academico.calificaciones_parciales
+    ADD CONSTRAINT calificaciones_parciales_pkey PRIMARY KEY (calificacion_parcial_id);
+
+
+--
 -- Name: calificaciones calificaciones_pkey; Type: CONSTRAINT; Schema: academico; Owner: -
 --
 
@@ -1817,6 +2021,14 @@ ALTER TABLE ONLY academico.alumnos
 
 ALTER TABLE ONLY academico.calificaciones
     ADD CONSTRAINT uq_calificaciones_inscripcion UNIQUE (inscripcion_id);
+
+
+--
+-- Name: calificaciones_parciales uq_calificaciones_parciales_inscripcion_numero; Type: CONSTRAINT; Schema: academico; Owner: -
+--
+
+ALTER TABLE ONLY academico.calificaciones_parciales
+    ADD CONSTRAINT uq_calificaciones_parciales_inscripcion_numero UNIQUE (inscripcion_id, numero_parcial);
 
 
 --
@@ -2148,6 +2360,20 @@ CREATE INDEX ix_calificaciones_actualizada_por ON academico.calificaciones USING
 --
 
 CREATE INDEX ix_calificaciones_capturada_por ON academico.calificaciones USING btree (capturada_por_usuario_id);
+
+
+--
+-- Name: ix_calificaciones_parciales_capturada_por; Type: INDEX; Schema: academico; Owner: -
+--
+
+CREATE INDEX ix_calificaciones_parciales_capturada_por ON academico.calificaciones_parciales USING btree (capturada_por_usuario_id);
+
+
+--
+-- Name: ix_calificaciones_parciales_inscripcion; Type: INDEX; Schema: academico; Owner: -
+--
+
+CREATE INDEX ix_calificaciones_parciales_inscripcion ON academico.calificaciones_parciales USING btree (inscripcion_id);
 
 
 --
@@ -2515,6 +2741,13 @@ CREATE TRIGGER trg_calificaciones_inscripcion_valida BEFORE INSERT OR UPDATE ON 
 
 
 --
+-- Name: calificaciones_parciales trg_calificaciones_parciales_validar_grupo; Type: TRIGGER; Schema: academico; Owner: -
+--
+
+CREATE TRIGGER trg_calificaciones_parciales_validar_grupo BEFORE INSERT OR UPDATE ON academico.calificaciones_parciales FOR EACH ROW EXECUTE FUNCTION academico.fn_validar_parcial_pertenece_grupo();
+
+
+--
 -- Name: grupos trg_grupos_a_carrera; Type: TRIGGER; Schema: academico; Owner: -
 --
 
@@ -2540,6 +2773,20 @@ CREATE TRIGGER trg_grupos_b_periodo BEFORE INSERT OR UPDATE OF periodo_academico
 --
 
 CREATE TRIGGER trg_grupos_c_propagar_periodo AFTER UPDATE OF periodo_academico_id ON academico.grupos FOR EACH ROW WHEN ((old.periodo_academico_id IS DISTINCT FROM new.periodo_academico_id)) EXECUTE FUNCTION academico.fn_propagar_periodo_a_sesiones();
+
+
+--
+-- Name: grupos trg_grupos_proteger_parciales; Type: TRIGGER; Schema: academico; Owner: -
+--
+
+CREATE TRIGGER trg_grupos_proteger_parciales BEFORE UPDATE OF numero_parciales ON academico.grupos FOR EACH ROW EXECUTE FUNCTION academico.fn_proteger_cambio_parciales_grupo();
+
+
+--
+-- Name: grupos trg_grupos_sincronizar_calificaciones; Type: TRIGGER; Schema: academico; Owner: -
+--
+
+CREATE TRIGGER trg_grupos_sincronizar_calificaciones AFTER UPDATE OF numero_parciales ON academico.grupos FOR EACH ROW EXECUTE FUNCTION academico.fn_sincronizar_calificaciones_cambio_parciales();
 
 
 --
@@ -2739,6 +2986,13 @@ CREATE TRIGGER trg_solicitudes_resuelta_inmutable BEFORE UPDATE ON solicitudes.s
 
 
 --
+-- Name: solicitudes trg_solicitudes_solo_alumnos_activos; Type: TRIGGER; Schema: solicitudes; Owner: -
+--
+
+CREATE TRIGGER trg_solicitudes_solo_alumnos_activos BEFORE INSERT ON solicitudes.solicitudes FOR EACH ROW EXECUTE FUNCTION solicitudes.fn_validar_alumno_activo_solicitud();
+
+
+--
 -- Name: alumnos_carreras fk_alumnos_carreras_alumno; Type: FK CONSTRAINT; Schema: academico; Owner: -
 --
 
@@ -2816,6 +3070,30 @@ ALTER TABLE ONLY academico.calificaciones
 
 ALTER TABLE ONLY academico.calificaciones
     ADD CONSTRAINT fk_calificaciones_inscripcion FOREIGN KEY (inscripcion_id) REFERENCES academico.inscripciones(inscripcion_id) ON DELETE RESTRICT;
+
+
+--
+-- Name: calificaciones_parciales fk_calificaciones_parciales_actualizada_por; Type: FK CONSTRAINT; Schema: academico; Owner: -
+--
+
+ALTER TABLE ONLY academico.calificaciones_parciales
+    ADD CONSTRAINT fk_calificaciones_parciales_actualizada_por FOREIGN KEY (actualizada_por_usuario_id) REFERENCES seguridad.usuarios(usuario_id) ON DELETE RESTRICT;
+
+
+--
+-- Name: calificaciones_parciales fk_calificaciones_parciales_capturada_por; Type: FK CONSTRAINT; Schema: academico; Owner: -
+--
+
+ALTER TABLE ONLY academico.calificaciones_parciales
+    ADD CONSTRAINT fk_calificaciones_parciales_capturada_por FOREIGN KEY (capturada_por_usuario_id) REFERENCES seguridad.usuarios(usuario_id) ON DELETE RESTRICT;
+
+
+--
+-- Name: calificaciones_parciales fk_calificaciones_parciales_inscripcion; Type: FK CONSTRAINT; Schema: academico; Owner: -
+--
+
+ALTER TABLE ONLY academico.calificaciones_parciales
+    ADD CONSTRAINT fk_calificaciones_parciales_inscripcion FOREIGN KEY (inscripcion_id) REFERENCES academico.inscripciones(inscripcion_id) ON DELETE RESTRICT;
 
 
 --
@@ -3127,4 +3405,6 @@ ALTER TABLE ONLY solicitudes.solicitudes
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20261007000000'),
-    ('20261011000000');
+    ('20261011000000'),
+    ('20261012000000'),
+    ('20261012120000');

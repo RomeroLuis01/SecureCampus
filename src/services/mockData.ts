@@ -477,11 +477,16 @@ export interface StudentGradeEntry {
   id: string
   matricula: string
   nombre: string
-  parcial1: number
-  parcial2: number
-  proyecto: number
-  final: number
   asistencia: number
+  parcial1?: number | null
+  parcial2?: number | null
+  parcial3?: number | null
+  parcial4?: number | null
+  parcial5?: number | null
+  parcial6?: number | null
+  proyecto?: number | null
+  parciales?: Record<number, number | null>
+  final: number | null
   estado: 'APROBADO' | 'REPROBADO' | 'PENDIENTE'
 }
 
@@ -495,6 +500,7 @@ export interface TeacherGroup {
   horario: string
   alumnosInscritos: number
   cupoMaximo: number
+  numeroParciales: number
   periodo: string
   estatusActa: 'ABIERTA' | 'EN_CAPTURA' | 'CERRADA_FIRMADA'
   fechaLimite: string
@@ -526,6 +532,7 @@ export const mockTeacherGroups: TeacherGroup[] = [
     horario: 'Lun, Mié 07:00 - 09:00',
     alumnosInscritos: 28,
     cupoMaximo: 30,
+    numeroParciales: 3,
     periodo: '2026-B',
     estatusActa: 'EN_CAPTURA',
     fechaLimite: '28 de Septiembre de 2026',
@@ -534,10 +541,11 @@ export const mockTeacherGroups: TeacherGroup[] = [
         id: 'est-1',
         matricula: '202301042',
         nombre: 'Valeria Sofía Morales Rivas',
-        parcial1: 9.8,
-        parcial2: 9.5,
-        proyecto: 10.0,
-        final: 9.7,
+        parcial1: 95,
+        parcial2: 95,
+        parcial3: 100,
+        parciales: { 1: 95, 2: 95, 3: 100 },
+        final: 97,
         asistencia: 96,
         estado: 'APROBADO',
       },
@@ -545,10 +553,11 @@ export const mockTeacherGroups: TeacherGroup[] = [
         id: 'est-2',
         matricula: '202203091',
         nombre: 'Diego Alejandro Torres Lozano',
-        parcial1: 8.5,
-        parcial2: 8.2,
-        proyecto: 8.8,
-        final: 8.5,
+        parcial1: 85,
+        parcial2: 82,
+        parcial3: 88,
+        parciales: { 1: 85, 2: 82, 3: 88 },
+        final: 85,
         asistencia: 90,
         estado: 'APROBADO',
       },
@@ -556,10 +565,11 @@ export const mockTeacherGroups: TeacherGroup[] = [
         id: 'est-3',
         matricula: '202401118',
         nombre: 'Mariana Camila Ortiz Mendoza',
-        parcial1: 7.2,
-        parcial2: 7.0,
-        proyecto: 7.5,
-        final: 7.2,
+        parcial1: 72,
+        parcial2: 70,
+        parcial3: 75,
+        parciales: { 1: 72, 2: 70, 3: 75 },
+        final: 72,
         asistencia: 82,
         estado: 'APROBADO',
       },
@@ -567,10 +577,11 @@ export const mockTeacherGroups: TeacherGroup[] = [
         id: 'est-4',
         matricula: '202102004',
         nombre: 'Carlos Eduardo Ramírez Peña',
-        parcial1: 5.5,
-        parcial2: 5.0,
-        proyecto: 6.0,
-        final: 5.4,
+        parcial1: 55,
+        parcial2: 50,
+        parcial3: 60,
+        parciales: { 1: 55, 2: 50, 3: 60 },
+        final: 55,
         asistencia: 74,
         estado: 'REPROBADO',
       },
@@ -578,10 +589,11 @@ export const mockTeacherGroups: TeacherGroup[] = [
         id: 'est-5',
         matricula: '202302819',
         nombre: 'Sebastián Herrera Morales',
-        parcial1: 9.0,
-        parcial2: 9.2,
-        proyecto: 9.5,
-        final: 9.2,
+        parcial1: 90,
+        parcial2: 92,
+        parcial3: 95,
+        parciales: { 1: 90, 2: 92, 3: 95 },
+        final: 92,
         asistencia: 94,
         estado: 'APROBADO',
       },
@@ -597,6 +609,7 @@ export const mockTeacherGroups: TeacherGroup[] = [
     horario: 'Lun, Mié 11:00 - 13:00',
     alumnosInscritos: 26,
     cupoMaximo: 30,
+    numeroParciales: 4,
     periodo: '2026-B',
     estatusActa: 'ABIERTA',
     fechaLimite: '28 de Septiembre de 2026',
@@ -605,10 +618,12 @@ export const mockTeacherGroups: TeacherGroup[] = [
         id: 'est-6',
         matricula: '202309912',
         nombre: 'Emilio Aranda Campos',
-        parcial1: 9.4,
-        parcial2: 9.0,
-        proyecto: 9.5,
-        final: 9.3,
+        parcial1: 94,
+        parcial2: 90,
+        parcial3: 95,
+        parcial4: 93,
+        parciales: { 1: 94, 2: 90, 3: 95, 4: 93 },
+        final: 93,
         asistencia: 95,
         estado: 'APROBADO',
       },
@@ -616,10 +631,12 @@ export const mockTeacherGroups: TeacherGroup[] = [
         id: 'est-7',
         matricula: '202308119',
         nombre: 'Jimena Castro Villa',
-        parcial1: 8.8,
-        parcial2: 8.5,
-        proyecto: 9.0,
-        final: 8.7,
+        parcial1: 88,
+        parcial2: 85,
+        parcial3: 90,
+        parcial4: 87,
+        parciales: { 1: 88, 2: 85, 3: 90, 4: 87 },
+        final: 88,
         asistencia: 92,
         estado: 'APROBADO',
       },
@@ -635,6 +652,7 @@ export const mockTeacherGroups: TeacherGroup[] = [
     horario: 'Mar, Jue 07:00 - 09:00',
     alumnosInscritos: 30,
     cupoMaximo: 30,
+    numeroParciales: 2,
     periodo: '2026-B',
     estatusActa: 'CERRADA_FIRMADA',
     fechaLimite: 'Concluido',
@@ -643,10 +661,10 @@ export const mockTeacherGroups: TeacherGroup[] = [
         id: 'est-8',
         matricula: '202401882',
         nombre: 'Santiago Gómez Cruz',
-        parcial1: 9.0,
-        parcial2: 9.5,
-        proyecto: 9.0,
-        final: 9.2,
+        parcial1: 90,
+        parcial2: 95,
+        parciales: { 1: 90, 2: 95 },
+        final: 93,
         asistencia: 98,
         estado: 'APROBADO',
       },
@@ -687,6 +705,7 @@ export interface CurricularGroup {
   dias: string
   inscritos: number
   capacidadMaxima: number
+  numeroParciales: number
   sobrecuposEmitidos: number
   estado: 'ABIERTO' | 'CERRADO' | 'PLANIFICADO'
 }
@@ -843,6 +862,7 @@ export const mockCurricularGroups: CurricularGroup[] = [
     dias: 'Lun, Mié',
     inscritos: 28,
     capacidadMaxima: 30,
+    numeroParciales: 3,
     sobrecuposEmitidos: 2,
     estado: 'ABIERTO',
   },
@@ -862,6 +882,7 @@ export const mockCurricularGroups: CurricularGroup[] = [
     dias: 'Mar, Jue',
     inscritos: 29,
     capacidadMaxima: 30,
+    numeroParciales: 4,
     sobrecuposEmitidos: 1,
     estado: 'ABIERTO',
   },
@@ -881,6 +902,7 @@ export const mockCurricularGroups: CurricularGroup[] = [
     dias: 'Vie',
     inscritos: 27,
     capacidadMaxima: 30,
+    numeroParciales: 2,
     sobrecuposEmitidos: 0,
     estado: 'ABIERTO',
   },
@@ -900,6 +922,7 @@ export const mockCurricularGroups: CurricularGroup[] = [
     dias: 'Lun, Mié',
     inscritos: 26,
     capacidadMaxima: 30,
+    numeroParciales: 3,
     sobrecuposEmitidos: 0,
     estado: 'ABIERTO',
   },
@@ -919,6 +942,7 @@ export const mockCurricularGroups: CurricularGroup[] = [
     dias: 'Mar, Jue',
     inscritos: 30,
     capacidadMaxima: 30,
+    numeroParciales: 3,
     sobrecuposEmitidos: 3,
     estado: 'CERRADO',
   },
@@ -938,6 +962,7 @@ export const mockCurricularGroups: CurricularGroup[] = [
     dias: 'Mar, Jue',
     inscritos: 22,
     capacidadMaxima: 25,
+    numeroParciales: 3,
     sobrecuposEmitidos: 0,
     estado: 'ABIERTO',
   },

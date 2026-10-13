@@ -18,6 +18,7 @@ export interface AuthUser {
   carreraNombre?: string | null;
   roles: UserRole[];
   permisos: string[];
+  estadoAlumno?: string | null;
 }
 
 export interface LoginResponse {

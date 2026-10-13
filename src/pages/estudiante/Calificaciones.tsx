@@ -79,6 +79,7 @@ export const StudentGradesView: React.FC = () => {
           <span className="font-semibold text-secondary block">{row.asignatura}</span>
           <span className="text-[11px] text-secondary-slate">
             {row.profesor} • Grupo {row.claveGrupo}
+            {row.numeroParciales ? ` • ${row.numeroParciales} Parciales` : ''}
           </span>
         </div>
       ),
@@ -119,7 +120,7 @@ export const StudentGradesView: React.FC = () => {
               isPassing ? 'text-secondary' : 'text-academic-danger'
             }`}
           >
-            {row.calificacionFinal.toFixed(2)}
+            {Math.round(row.calificacionFinal)}
           </span>
         )
       },
