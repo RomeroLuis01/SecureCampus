@@ -174,8 +174,8 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
        a.matricula,
        a.estado AS estado_alumno,
        pr.numero_empleado,
-       COALESCE(c_ur.codigo, c_ac.codigo) AS carrera_codigo,
-       COALESCE(c_ur.nombre, c_ac.nombre) AS carrera_nombre,
+       COALESCE(c_ur.codigo, c_ac.codigo, c_pr.codigo) AS carrera_codigo,
+       COALESCE(c_ur.nombre, c_ac.nombre, c_pr.nombre) AS carrera_nombre,
        c.estado AS estado_credencial,
        c.bloqueado_hasta
      FROM seguridad.usuarios u
@@ -187,6 +187,8 @@ export async function getUserProfile(usuarioId: string): Promise<AuthUserProfile
      LEFT JOIN nucleo.carreras c_ur ON c_ur.carrera_id = ur.carrera_id
      LEFT JOIN academico.alumnos_carreras ac ON ac.alumno_id = a.alumno_id AND ac.fecha_fin IS NULL
      LEFT JOIN nucleo.carreras c_ac ON c_ac.carrera_id = ac.carrera_id
+     LEFT JOIN academico.profesores_carreras pc ON pc.profesor_id = pr.profesor_id AND pc.fecha_fin IS NULL
+     LEFT JOIN nucleo.carreras c_pr ON c_pr.carrera_id = pc.carrera_id
      WHERE u.usuario_id = $1`,
     [usuarioId]
   );

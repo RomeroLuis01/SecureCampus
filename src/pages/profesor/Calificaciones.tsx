@@ -17,8 +17,10 @@ import {
   Input,
 } from '../../components'
 import { mockTeacherGroups } from '../../services/mockData'
+import { useAuth } from '../../context/AuthContext'
 
 export const TeacherGradesView: React.FC = () => {
+  const { user } = useAuth()
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0)
   const [groupsData, setGroupsData] = useState(mockTeacherGroups)
   const [isSignModalOpen, setIsSignModalOpen] = useState(false)
@@ -332,7 +334,7 @@ export const TeacherGradesView: React.FC = () => {
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
           <span>
-            Las modificaciones sobre actas de evaluación quedan firmadas bajo la clave institucional de docente (DOC-8821).
+            Las modificaciones sobre actas de evaluación quedan firmadas bajo la clave institucional de docente ({user?.numeroEmpleado || 'DOCENTE'}).
           </span>
         </div>
         <div className="font-mono text-[11px] text-secondary-muted">

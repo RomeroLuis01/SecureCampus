@@ -123,7 +123,7 @@ export const mockCurrentSubjects: EnrolledSubject[] = [
   {
     codigo: 'CS-601',
     nombre: 'Seguridad en Aplicaciones Web y DevSecOps',
-    profesor: 'Dr. Alejandro Méndez Rosas',
+    profesor: 'Dr. Antonio Méndez',
     aula: 'Lab Redes 3',
     horario: 'Lun, Mié 07:00 - 09:00',
     creditos: 8,
@@ -220,7 +220,7 @@ export const mockKardexHistory: KardexPeriod[] = [
       {
         codigo: 'CS-601',
         asignatura: 'Seguridad en Aplicaciones Web y DevSecOps',
-        profesor: 'Dr. Alejandro Méndez Rosas',
+        profesor: 'Dr. Antonio Méndez',
         creditos: 8,
         tipoEvaluacion: 'ORDINARIO',
         calificacionFinal: 9.65,
@@ -369,7 +369,7 @@ export const mockAdminUsers: SystemUser[] = [
   {
     id: 'usr-002',
     identificador: 'DOC-8821',
-    nombre: 'Dr. Alejandro Méndez Rosas',
+    nombre: 'Dr. Antonio Méndez',
     email: 'a.mendez@securecampus.edu',
     rol: 'Profesor',
     estatus: 'ACTIVO',
@@ -432,7 +432,7 @@ export const mockAuditLogs: AuditLog[] = [
   {
     id: 'log-2',
     timestamp: '2026-09-21 03:15:02',
-    usuario: 'Dr. Alejandro Méndez (DOC-8821)',
+    usuario: 'Dr. Antonio Méndez (DOC-8821)',
     rol: 'Profesor',
     accion: 'Captura de calificaciones Parcial 2 - 28 registros',
     ip: '192.168.10.88',
@@ -510,8 +510,8 @@ export interface TeacherGroup {
 export const mockTeacherProfile: TeacherProfile = {
   id: 'doc-8821',
   nomina: 'DOC-8821',
-  nombre: 'Alejandro',
-  apellidos: 'Méndez Rosas',
+  nombre: 'Antonio',
+  apellidos: 'Méndez',
   email: 'a.mendez@securecampus.edu',
   telefono: '+52 (55) 5729-6000 ext. 5412',
   departamento: 'Seguridad en Tecnologías de Información y Computación',
@@ -755,7 +755,7 @@ export const mockStaffTeachers: StaffTeacher[] = [
   {
     id: 'doc-001',
     numeroNomina: 'DOC-8821',
-    nombreCompleto: 'Dr. Alejandro Méndez Rosas',
+    nombreCompleto: 'Dr. Antonio Méndez',
     rfc: 'MERA720914HY2',
     curp: 'MERA720914HDFRN09',
     cedulaDgp: '4892104-DGP',
@@ -764,7 +764,7 @@ export const mockStaffTeachers: StaffTeacher[] = [
     horasSemanales: 20,
     materiasAsignadas: ['Seguridad en Aplicaciones Web', 'Auditoría de Redes'],
     estado: 'VIGENTE',
-    cubiculo: 'Edificio B, Cubículo 308',
+    cubiculo: 'Edificio B, Nivel 3, Cubículo 308',
     correoInstitucional: 'a.mendez@securecampus.edu',
   },
   {
@@ -853,7 +853,7 @@ export const mockCurricularGroups: CurricularGroup[] = [
     codigoGrupo: '6CV1',
     semestre: 6,
     turno: 'MATUTINO',
-    docenteTitular: 'Dr. Alejandro Méndez Rosas',
+    docenteTitular: 'Dr. Antonio Méndez',
     docenteNomina: 'DOC-8821',
     aula: 'Lab Redes 3',
     edificio: 'Edificio Tecnologías Nivel 2',
@@ -913,7 +913,7 @@ export const mockCurricularGroups: CurricularGroup[] = [
     codigoGrupo: '6CV2',
     semestre: 6,
     turno: 'VESPERTINO',
-    docenteTitular: 'Dr. Alejandro Méndez Rosas',
+    docenteTitular: 'Dr. Antonio Méndez',
     docenteNomina: 'DOC-8821',
     aula: 'Lab Redes 2',
     edificio: 'Edificio Tecnologías Nivel 2',

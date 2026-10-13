@@ -19,11 +19,52 @@ import {
   Button,
   Badge,
 } from '../../components'
-import { mockTeacherProfile, mockTeacherGroups } from '../../services/mockData'
+import { mockStaffTeachers, mockTeacherGroups } from '../../services/mockData'
+import { useAuth } from '../../context/AuthContext'
 
 export const TeacherDashboard: React.FC = () => {
-  const teacher = mockTeacherProfile
+  const { user, status } = useAuth()
   const groups = mockTeacherGroups
+
+  if (status === 'loading') {
+    return (
+      <div className="space-y-6 font-sans animate-pulse" data-testid="teacher-dashboard-loading">
+        <div className="bg-surface-lowest border border-border rounded-lg p-6 h-32 flex items-center justify-center text-sm text-secondary-slate">
+          Cargando datos institucionales de la sesión docente...
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="space-y-6 font-sans" data-testid="teacher-dashboard-unauthenticated">
+        <div className="bg-surface-lowest border border-border rounded-lg p-6 text-center text-secondary-slate">
+          <p className="text-base font-semibold text-secondary">Sesión docente no disponible</p>
+          <p className="text-xs mt-1">Por favor inicie sesión para acceder a su portal académico.</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Obtenemos información complementaria asociada a la misma nómina docente autenticada
+  const staffInfo = user.numeroEmpleado
+    ? mockStaffTeachers.find((t) => t.numeroNomina === user.numeroEmpleado)
+    : null
+
+  const displayName = user.nombreCompleto
+  const nameParts = displayName.trim().split(/\s+/).filter(Boolean)
+  const initials = nameParts.length > 1
+    ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+    : (nameParts[0]?.[0] || 'DOC').toUpperCase()
+
+  const nomina = user.numeroEmpleado || 'N/A'
+  const departamento = user.carreraNombre || 'Seguridad en Tecnologías de Información y Computación'
+  const categoria = staffInfo?.tipoPlaza === 'TIEMPO_COMPLETO'
+    ? 'Profesor Titular C - Tiempo Completo'
+    : 'Profesor de Carrera'
+  const cubiculo = staffInfo?.cubiculo || 'Edificio B, Nivel 3, Cubículo 308'
+  const horasSemanales = staffInfo?.horasSemanales || 20
 
   const totalStudents = groups.reduce((acc, g) => acc + g.alumnosInscritos, 0)
   const pendingActs = groups.filter((g) => g.estatusActa !== 'CERRADA_FIRMADA').length
@@ -33,24 +74,23 @@ export const TeacherDashboard: React.FC = () => {
       {/* 1. Header de Bienvenida Institucional */}
       <div className="bg-surface-lowest border border-border rounded-lg p-6 shadow-layer-1 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-start gap-4">
-          <div className="w-14 h-14 rounded-full bg-primary text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm border-2 border-border-subtle">
-            {teacher.nombre[0]}
-            {teacher.apellidos[0]}
+          <div className="w-14 h-14 rounded-full bg-primary text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm border-2 border-border-subtle font-mono">
+            {initials}
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <h1 className="text-xl font-bold text-secondary tracking-tight">
-                {teacher.nombre} {teacher.apellidos}
+                {displayName}
               </h1>
               <Badge variant="success" dot size="sm">
-                {teacher.categoria}
+                {categoria}
               </Badge>
               <span className="text-xs font-mono font-medium text-secondary-slate bg-surface-canvas px-2 py-0.5 rounded border border-border-subtle">
-                Nómina: {teacher.nomina}
+                Nómina: {nomina}
               </span>
             </div>
             <p className="text-xs text-secondary-slate">
-              {teacher.departamento} • {teacher.cubículo}
+              {departamento} • {cubiculo}
             </p>
           </div>
         </div>
@@ -111,7 +151,7 @@ export const TeacherDashboard: React.FC = () => {
             <div>
               <p className="text-xs font-medium text-secondary-slate">Carga Académica</p>
               <h3 className="text-2xl font-bold text-secondary mt-1 tabular-nums">
-                {teacher.horasSemanales} <span className="text-xs font-normal text-secondary-slate">hrs/sem</span>
+                {horasSemanales} <span className="text-xs font-normal text-secondary-slate">hrs/sem</span>
               </h3>
               <p className="text-[11px] text-secondary-slate mt-1">Frente a grupo</p>
             </div>

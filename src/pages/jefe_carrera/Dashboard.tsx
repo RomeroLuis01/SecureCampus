@@ -93,7 +93,7 @@ export const JefeDashboard: React.FC = () => {
       codigoGrupo: newGroupCodigo || '7CV2',
       semestre: 7,
       turno: 'MATUTINO',
-      docenteTitular: newGroupDocente || 'Dr. Alejandro Méndez Rosas',
+      docenteTitular: newGroupDocente || 'Dr. Antonio Méndez',
       docenteNomina: 'DOC-8821',
       aula: newGroupAula || 'Lab Redes 1',
       edificio: 'Edificio Tecnologías',
@@ -703,7 +703,7 @@ export const JefeDashboard: React.FC = () => {
             />
             <Input
               label="Docente Titular Asignado"
-              placeholder="Dr. Alejandro Méndez Rosas"
+              placeholder="Dr. Antonio Méndez"
               value={newGroupDocente}
               onChange={(e) => setNewGroupDocente(e.target.value)}
               required

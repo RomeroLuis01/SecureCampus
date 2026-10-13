@@ -75,7 +75,7 @@ export const CurricularOfferView: React.FC = () => {
       codigoGrupo: newGroup.codigoGrupo || '6CV3',
       semestre: Number(newGroup.semestre),
       turno: newGroup.turno,
-      docenteTitular: newGroup.docenteTitular || 'Dr. Alejandro Méndez Rosas',
+      docenteTitular: newGroup.docenteTitular || 'Dr. Antonio Méndez',
       docenteNomina: 'DOC-8821',
       aula: newGroup.aula || 'Lab Cómputo 3',
       edificio: newGroup.edificio,
@@ -596,7 +596,7 @@ export const CurricularOfferView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="Docente Titular"
-              placeholder="Dr. Alejandro Méndez Rosas"
+              placeholder="Dr. Antonio Méndez"
               value={newGroup.docenteTitular}
               onChange={(e) => setNewGroup({ ...newGroup, docenteTitular: e.target.value })}
               required

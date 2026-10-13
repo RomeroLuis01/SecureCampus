@@ -376,7 +376,7 @@ describe('auth.service (Unit Tests)', () => {
   });
 
   it('11. logout revokes session token and records audit event in database', async () => {
-    const revokeSpy = vi.spyOn(sessionService, 'revokeSession').mockResolvedValueOnce();
+    const revokeSpy = vi.spyOn(sessionService, 'revokeSession').mockResolvedValueOnce(true);
     const querySpy = vi.spyOn(databaseModule, 'query').mockResolvedValueOnce({
       rows: [],
       rowCount: 1,

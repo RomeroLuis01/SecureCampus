@@ -16,58 +16,101 @@ import {
   Briefcase,
 } from 'lucide-react'
 import { Card, Button, Badge, Modal, Input } from '../../components'
-import { mockTeacherProfile, mockTeacherGroups } from '../../services/mockData'
+import { mockStaffTeachers, mockTeacherGroups } from '../../services/mockData'
 import { useAuth } from '../../context/AuthContext'
 
 export const TeacherProfileView: React.FC = () => {
-  const { user } = useAuth()
+  const { user, status } = useAuth()
 
-  const [profile, setProfile] = useState(() => ({
-    ...mockTeacherProfile,
-    nombre: user?.nombreCompleto || mockTeacherProfile.nombre,
-    email: user?.correo || mockTeacherProfile.email,
-    nomina: user?.numeroEmpleado || mockTeacherProfile.nomina,
-    telefono: user?.telefono || mockTeacherProfile.telefono,
-  }))
+  const staffInfo = React.useMemo(() => {
+    return user?.numeroEmpleado
+      ? mockStaffTeachers.find((t) => t.numeroNomina === user.numeroEmpleado)
+      : null
+  }, [user?.numeroEmpleado])
+
+  const initialProfile = React.useMemo(() => {
+    if (!user) return null
+
+    const rawNombre = user.nombreCompleto || ''
+    const parts = rawNombre.trim().split(/\s+/).filter(Boolean)
+    const nombre = parts[0] || ''
+    const apellidos = parts.slice(1).join(' ') || ''
+
+    return {
+      id: user.usuarioId,
+      nomina: user.numeroEmpleado || 'N/A',
+      nombre,
+      apellidos,
+      nombreCompleto: user.nombreCompleto,
+      email: user.correo,
+      telefono: user.telefono || '+52 (55) 5729-6000 ext. 5412',
+      departamento: user.carreraNombre || 'Seguridad en Tecnologías de Información y Computación',
+      categoria: staffInfo?.tipoPlaza === 'TIEMPO_COMPLETO'
+        ? 'Profesor Titular C - Tiempo Completo'
+        : 'Profesor de Carrera',
+      cubículo: staffInfo?.cubiculo || 'Edificio B, Nivel 3, Cubículo 308',
+      horasSemanales: staffInfo?.horasSemanales || 20,
+      gruposActivos: 3,
+    }
+  }, [user, staffInfo])
+
+  const [profile, setProfile] = useState(initialProfile)
 
   React.useEffect(() => {
-    if (user) {
-      setProfile((prev) => ({
-        ...prev,
-        nombre: user.nombreCompleto || prev.nombre,
-        email: user.correo || prev.email,
-        nomina: user.numeroEmpleado || prev.nomina,
-        telefono: user.telefono || prev.telefono,
-      }))
-    }
-  }, [user])
+    setProfile(initialProfile)
+  }, [initialProfile])
 
   // Iniciales dinámicas del docente
   const initials = React.useMemo(() => {
-    const displayName = user?.nombreCompleto || profile.nombre
+    const displayName = user?.nombreCompleto || profile?.nombreCompleto
     if (!displayName) return 'DOC'
     const parts = displayName.trim().split(/\s+/).filter(Boolean)
     if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase()
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-  }, [user?.nombreCompleto, profile.nombre])
+  }, [user?.nombreCompleto, profile?.nombreCompleto])
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [editPhone, setEditPhone] = useState(profile.telefono)
-  const [editEmail, setEditEmail] = useState(profile.email)
-  const [editCubiculo, setEditCubiculo] = useState(profile.cubículo)
+  const [editPhone, setEditPhone] = useState(profile?.telefono || '')
+  const [editEmail, setEditEmail] = useState(profile?.email || '')
+  const [editCubiculo, setEditCubiculo] = useState(profile?.cubículo || '')
   const [saveSuccess, setSaveSuccess] = useState(false)
+
+  React.useEffect(() => {
+    if (profile) {
+      setEditPhone(profile.telefono)
+      setEditEmail(profile.email)
+      setEditCubiculo(profile.cubículo)
+    }
+  }, [profile])
 
   const handleSaveContact = (e: React.FormEvent) => {
     e.preventDefault()
-    setProfile((prev) => ({
+    setProfile((prev) => (prev ? {
       ...prev,
       telefono: editPhone,
       email: editEmail,
       cubículo: editCubiculo,
-    }))
+    } : null))
     setIsEditModalOpen(false)
     setSaveSuccess(true)
     setTimeout(() => setSaveSuccess(false), 3500)
+  }
+
+  if (status === 'loading') {
+    return (
+      <div className="p-8 text-center text-secondary-slate animate-pulse" data-testid="teacher-profile-loading">
+        <p className="text-base font-semibold text-secondary">Cargando expediente docente oficial...</p>
+      </div>
+    )
+  }
+
+  if (!user || !profile) {
+    return (
+      <div className="p-8 text-center text-secondary-slate" data-testid="teacher-profile-unauthenticated">
+        <p className="text-base font-semibold text-secondary">Expediente docente no disponible</p>
+        <p className="text-xs mt-1">Debe iniciar sesión para consultar su información académica institucional.</p>
+      </div>
+    )
   }
 
   return (
@@ -138,7 +181,7 @@ export const TeacherProfileView: React.FC = () => {
                 </span>
               </div>
               <div>
-                <h2 className="text-lg font-bold text-secondary">{user?.nombreCompleto || `${profile.nombre} ${profile.apellidos}`}</h2>
+                <h2 className="text-lg font-bold text-secondary">{user.nombreCompleto}</h2>
                 <p className="text-xs text-secondary-slate font-medium">{profile.categoria}</p>
                 <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface-canvas rounded text-xs font-mono font-semibold text-primary border border-border-subtle leading-none">
                   <Hash className="w-3.5 h-3.5 shrink-0" />
