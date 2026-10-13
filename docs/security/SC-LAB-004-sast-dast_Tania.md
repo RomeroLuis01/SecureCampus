@@ -1,19 +1,3 @@
-<!--
-CÓMO USAR ESTE ESQUELETO
-========================
-1. Cada sección trae instrucciones en cursiva entre corchetes [así]. Bórralas
-   y escribe tu contenido real en su lugar — no dejes texto de ejemplo sin
-   reemplazar.
-2. Todo lo que pongas aquí debe venir de una ejecución REAL de los comandos
-   (Semgrep/ZAP) y de una revisión REAL del código, no de lo que "crees" que
-   va a pasar. Si un comando falla o no tienes Docker corriendo, documenta el
-   error tal cual, no inventes un resultado.
-3. Guarda este archivo en: docs/security/SC-LAB-004-sast-dast_Tania.md
-   (sigue el mismo patrón de nombre que tus labs 001-003).
-4. Al final, bórralo todo este bloque de comentario HTML — es solo tu guía de
-   llenado y no debe aparecer en la entrega.
--->
-
 # SC-LAB-004 — Análisis de Seguridad Estático y Dinámico (SAST + DAST)
 ## Proyecto: SecureCampus
 
@@ -24,213 +8,157 @@ CÓMO USAR ESTE ESQUELETO
 
 ## 1. Objetivo
 
-[Reescribe con tus palabras, 2-3 líneas: qué vas a analizar (el backend
-Node/Express/TypeScript y/o el frontend React de SecureCampus), con qué
-técnicas (SAST con Semgrep, DAST con OWASP ZAP), y qué esperas lograr
-(identificar hallazgos reales, interpretarlos con criterio, y si aplica,
-corregir y reanalizar).]
-
----
+Analizar el código TypeScript del backend Express y del frontend React de SecureCampus con Semgrep (SAST), y evaluar la aplicación en ejecución con OWASP ZAP (DAST). Se busca documentar hallazgos verificables y distinguir entre resultados limpios y pruebas que no pudieron ejecutarse por falta de disponibilidad del entorno.
 
 ## 2. Entorno
 
 | Componente | Detalle |
 |---|---|
-| Sistema | [Windows + PowerShell + VS Code, o lo que uses] |
-| Proyecto analizado | SecureCampus — backend Node.js/Express/TypeScript + frontend React/TypeScript |
-| Base de datos | PostgreSQL (vía `docker compose`) |
+| Sistema | Windows, PowerShell y VS Code |
+| Proyecto analizado | SecureCampus — backend Node.js/Express/TypeScript y frontend React/TypeScript |
+| Base de datos | PostgreSQL en Docker Compose, puerto 5433 |
 | Gestor de paquetes | npm |
-| Herramienta SAST | Semgrep Community (contenedor Docker) |
-| Herramienta DAST | OWASP ZAP (contenedor Docker) |
-| Puertos usados | Backend: [el que indique tu `.env` → `PORT`] · Frontend: [normalmente 5173 con Vite] |
+| Herramienta SAST | Semgrep Community en Docker |
+| Herramienta DAST | OWASP ZAP estable en Docker |
+| Puertos previstos | API: 4000; frontend Vite: 5173 |
 
-> **Nota de alcance:** [aquí explica en 2-3 líneas la decisión que confirmaste
-> con tu profesor: ¿analizaste el proyecto real tal cual está, o usaste una
-> rama/archivo aislado con una vulnerabilidad introducida a propósito para
-> poder demostrar el ciclo detectar→corregir→reanalizar? Sé explícita, porque
-> esto enmarca cómo se deben leer tus resultados.]
-
----
+**Alcance:** Se analizaron los directorios del proyecto real (`backend/src` y `src`), sin introducir deliberadamente una vulnerabilidad ni modificar código de la aplicación. La ejecución dinámica quedó limitada porque el backend no inició; por tanto, ZAP no pudo probar una aplicación accesible y sus resultados no permiten concluir que SecureCampus esté libre de vulnerabilidades.
 
 ## 3. Preparación
 
-**Comandos ejecutados para levantar el entorno:**
-```
-npm run db:up
-npm run db:migrate
-npm run db:seed
-npm run api:dev
-npm run dev:ui
+Se ejecutó `npm run dev`. El orquestador inició PostgreSQL en el puerto 5433 y aplicó correctamente estas migraciones:
+
+```text
+20261011000000_autenticacion_local.sql
+20261012000000_parciales_y_solicitudes_activas.sql
+20261012120000_auditoria_concurrencia_y_parciales.sql
 ```
 
-**Verificación de que el entorno está arriba** (`git status`, `docker info`,
-y que el navegador/`curl` responda en los puertos esperados):
-```
-[pega aquí la salida real de tus comandos de verificación]
+Después, el backend no pudo arrancar porque faltó el ejecutable de `tsx`. El proceso reportó:
+
+```text
+Error: Cannot find module
+'C:\Users\Yaneth\Documents\GitHub\SecureCampus\node_modules\tsx\dist\cli.mjs'
+Node.js v22.22.0
+[Backend] El proceso del backend terminó inesperadamente (código 1).
 ```
 
----
+El coordinador realizó el apagado ordenado y detuvo PostgreSQL. No se inició el frontend ni quedó una API disponible para el análisis DAST. En la inspección inicial, `git status --short` no mostró cambios.
 
 ## 4. Parte A · SAST con Semgrep
 
-### 4.1 Análisis humano previo (antes de ejecutar la herramienta)
+### 4.1 Análisis humano previo
 
-Elige **un archivo real** de tu backend que maneje datos del usuario y
-toque la base de datos — por ejemplo `backend/src/academic/grade.service.ts`
-o `backend/src/academic/student.service.ts` — y analízalo tú primero, a mano.
+Se revisó `backend/src/academic/grade.service.ts`, que procesa y consulta calificaciones.
 
-| Pregunta | Tu respuesta |
+| Pregunta | Respuesta |
 |---|---|
-| ¿Qué dato controla el usuario? | [ej.: el `grupoId`, el `inscripcionId`, el `valorCalificacion` que llegan en el body/params de la petición HTTP] |
-| ¿A dónde llega ese dato? | [ej.: pasa del route handler al service, y de ahí a una consulta `pool.query(...)` contra PostgreSQL] |
-| ¿Qué riesgo observas (o descartas) y por qué? | [di explícitamente si ves o no el patrón de concatenación insegura — en este proyecto es más probable que **no** lo encuentres, porque ya usan `$1, $2...`; explica eso] |
-| ¿Qué control ya existe o propondrías? | [ej.: ya usa consultas parametrizadas; además `requireAuth`/`requireRoles`/`requirePermissions` antes de llegar al service] |
+| ¿Qué dato controla el usuario? | En la ruta de captura, `inscripcionId`, `numeroParcial` y `valorCalificacion` llegan en el cuerpo de la petición; `grupoId` está en la ruta. |
+| ¿A dónde llega ese dato? | El route valida el cuerpo con Zod y pasa los datos a `capturePartialGrade`; el servicio consulta y actualiza PostgreSQL. La ruta de lectura pasa `grupoId` a `getGroupGrades`. |
+| ¿Qué riesgo observas o descartas? | En el código revisado, las consultas usan parámetros de PostgreSQL (`$1`, `$2`, etc.) y separan los valores SQL de los datos. No se observó concatenación de entrada del usuario en la sentencia SQL, por lo que no se identificó el patrón clásico de SQLi en este flujo. |
+| ¿Qué control ya existe o propondrías? | El endpoint de captura valida UUID, parcial de 1 a 6 y calificación de 0 a 100 con Zod; además usa `requireAuth`, `requireRoles('PROFESOR')` y `requirePermissions`. El servicio comprueba la inscripción, el estado y el número de parciales configurados. Conviene verificar por separado la autorización del profesor sobre el grupo/inscripción concreta. |
 
-### 4.2 Ejecuta Semgrep
+### 4.2 Ejecución de Semgrep
 
-**Comando(s) ejecutados** (ajustados a tu estructura real de carpetas):
-```
+**Comandos ejecutados:**
+
+```powershell
 docker run --rm -v "${PWD}:/src" semgrep/semgrep semgrep scan --config auto /src/backend/src
 docker run --rm -v "${PWD}:/src" semgrep/semgrep semgrep scan --config auto /src/src
 ```
 
-| Evidencia SAST | Registro |
+| Evidencia SAST | Resultado |
 |---|---|
-| Regla/hallazgo | [nombre exacto de la regla que reportó Semgrep, o "0 findings" si no reportó nada] |
-| Archivo/línea | [ruta y número de línea reales que señaló la herramienta] |
-| ¿Qué evidencia aporta? | [qué te dice el hallazgo: fuente del dato → flujo → sink] |
-| ¿Coincide con tu análisis humano? | [sí/no, y por qué] |
-
-> Si el resultado fue **0 findings relevantes**, no lo dejes así nada más:
-> explica qué significa eso en tu caso concreto (que las reglas de Semgrep no
-> encontraron el patrón de SQLi/XSS clásico, probablemente porque el código
-> ya usa consultas parametrizadas y JSX con escape automático) — eso también
-> es un hallazgo que hay que interpretar, no ignorar.
+| Regla/hallazgo | 0 findings en ambos análisis; 0 findings bloqueantes. No se reportó una regla o vulnerabilidad específica. |
+| Archivos analizados | Backend: 24 archivos; frontend: 47 archivos. |
+| Reglas ejecutadas | 210 en cada análisis. Semgrep indicó una configuración de 1074 reglas disponibles y que el análisis se limitó a archivos rastreados por Git. |
+| Líneas interpretadas | Aproximadamente 100.0 % del backend y 99.9 % del frontend. |
+| ¿Qué evidencia aporta? | En los archivos rastreados y bajo las reglas ejecutadas, Semgrep no detectó patrones que reportar. Esto no prueba ausencia de fallas; tampoco cubre reglas no ejecutadas, archivos no rastreados ni autorización de negocio. |
+| ¿Coincide con el análisis humano? | Sí: el flujo revisado usa consultas parametrizadas y Semgrep no reportó SQLi en el backend. El resultado no equivale a una validación exhaustiva de todos los riesgos. |
 
 ### 4.3 Corrección y reanálisis
 
-[Si encontraste algo que corregir: pega el código antes/después y el
-comando de reanálisis con su resultado.
-Si NO encontraste nada que corregir en el código real: explica aquí la
-decisión de alcance que tomaste con tu profesor (ver nota de la sección 2) —
-por ejemplo, que demostraste el ciclo de corrección sobre un archivo de
-laboratorio aislado, y resume brevemente qué hiciste ahí.]
-
-```
-[comando de reanálisis]
-```
-
-**Resultado del reanálisis:** [pega la salida real]
-
----
+No se corrigió código porque estos análisis no reportaron hallazgos. Los dos comandos anteriores son los resultados obtenidos sobre el código existente; no hubo una corrección seguida de un reanálisis independiente ni se introdujo una vulnerabilidad de laboratorio.
 
 ## 5. Parte B · DAST con OWASP ZAP
 
-### 5.1 Verificación de que la app está accesible
+### 5.1 Verificación de acceso
 
+No se obtuvo una respuesta HTTP de la aplicación. El arranque integral falló antes de iniciar la API y el frontend. La prueba de ZAP contra el puerto 5173 corroboró que no había servicio escuchando:
+
+```text
+docker run --rm -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://host.docker.internal:5173
+
+Automation plan failures:
+Job spider failed to access URL
+http://host.docker.internal:5173 :
+Connect to http://host.docker.internal:5173 failed: Connection refused
+Failed to access summary file /home/zap/zap_out.json
 ```
-docker run --rm curlimages/curl http://host.docker.internal:[puerto]
-```
-**Resultado:** [pega la respuesta real]
+
+No se compartió una ejecución independiente de `curl`; por lo tanto, no se registra una respuesta de `curl` como evidencia.
 
 ### 5.2 Baseline — observación pasiva
 
-```
-docker run --rm -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://host.docker.internal:[puerto]
-```
-
-| Hallazgo baseline | ¿Qué observa? | ¿Requiere análisis? | Tu interpretación |
+| Resultado baseline | ¿Qué observa? | ¿Requiere análisis? | Interpretación |
 |---|---|---|---|
-| [ej.: Missing Anti-clickjacking Header] | [Cabecera HTTP] | [Sí/No — recuerda: con Helmet ya configurado, varios de estos pueden salir en PASS en lugar de WARN] | [explica si aplica o no a tu proyecto] |
-| [otro hallazgo real] | | | |
+| El spider no pudo acceder al objetivo (`Connection refused`); no se generó `zap_out.json`. | Conectividad HTTP con `http://host.docker.internal:5173`. | Sí: primero debe levantarse y verificarse la aplicación; después hay que repetir el baseline para obtener observaciones HTTP. | No es un hallazgo de seguridad de la aplicación ni un resultado limpio. Es una ejecución fallida por falta de servicio disponible. No se obtuvieron resultados sobre cabeceras o cookies. |
 
 ### 5.3 Active Scan — interacción deliberada
 
-```
-docker run --rm -t ghcr.io/zaproxy/zaproxy:stable zap-full-scan.py -t http://host.docker.internal:[puerto]
-```
-
-**Hallazgos relevantes encontrados:** [lista los hallazgos reales que haya
-reportado el active scan — si no aparece nada equivalente a XSS reflejado,
-dilo explícitamente y explica por qué crees que es así (React escapa por
-defecto, no se encontró `dangerouslySetInnerHTML`, etc.)]
+No se ejecutó `zap-full-scan.py`. Al no estar accesible la aplicación y haber fallado el spider del baseline, no existe evidencia de un active scan. En consecuencia, no se puede afirmar que se haya probado o descartado XSS reflejado, SQLi u otras vulnerabilidades dinámicas. Aunque React escapa texto interpolado por defecto, esa propiedad no sustituye una prueba contra la aplicación en ejecución.
 
 ### 5.4 Validación manual
 
-[Si el active scan reportó algo explotable, documenta aquí cómo lo
-verificaste manualmente (qué endpoint, qué input probaste, qué observaste).
-Si no había nada que validar porque no se encontró XSS/SQLi real, dilo y
-pasa a documentar en su lugar una prueba de autorización manual relevante a
-tu proyecto — por ejemplo, intentar que un profesor consulte calificaciones
-de un grupo que no tiene asignado, y confirmar que el backend lo rechaza.]
+No hubo un hallazgo dinámico que validar, porque el objetivo no respondió. Tampoco se realizó una prueba manual de autorización. Como siguiente prueba, una vez disponible el entorno, se recomienda autenticar un profesor y consultar o modificar un grupo no asignado, verificando la respuesta del backend. En el código revisado hay controles de autenticación, rol y permiso, pero se debe confirmar específicamente la autorización a nivel de grupo e inscripción con datos y respuestas reales.
 
 ### 5.5 Evidencia en Git de la línea base
 
-```
-git status
-git diff
-git add [archivos reales que hayas tocado, si aplica]
-git commit -m "[mensaje real]"
-```
+La inspección inicial con `git status --short` no mostró cambios. No se modificó código fuente, por lo que no se ejecutaron `git add` ni `git commit`. Este documento registra la evidencia disponible; no se afirma que se haya creado un commit.
 
-### 5.6 Corrección (si aplicó)
+### 5.6 Corrección
 
-[Código antes/después, si corregiste algo.]
+No aplicó: Semgrep no reportó hallazgos y el escaneo dinámico no pudo acceder a la aplicación. No se modificó código de la aplicación.
 
 ### 5.7 Retesting
 
-- Prueba funcional normal: [resultado]
-- Repetición de la prueba que detectó el problema: [resultado]
-- Nueva ejecución de `zap-full-scan.py`: [resultado]
-- ¿El hallazgo pasó de WARN/FAIL a PASS? [sí/no]
-- ¿Qué advertencias permanecieron y por qué? [explica]
+- **Prueba funcional normal:** no ejecutada; el backend no inició por el error de módulo `tsx` ausente.
+- **Repetición de una prueba que detectó un problema:** no aplica; no se identificó un hallazgo explotable.
+- **Nueva ejecución de `zap-full-scan.py`:** no ejecutada.
+- **¿El hallazgo pasó de WARN/FAIL a PASS?:** no; no hubo un hallazgo de aplicación ni retest.
+- **Advertencias que permanecieron:** no se obtuvo lista de alertas del baseline; el spider falló antes de generar el archivo de resumen.
 
----
-
-## 6. Comparación SAST vs DAST (aplicada a SecureCampus)
+## 6. Comparación SAST vs DAST
 
 | Criterio | SAST | DAST |
 |---|---|---|
-| Objeto | Código fuente (backend TS / frontend TSX) | Aplicación en ejecución (API + frontend) |
+| Objeto | Código fuente del backend y frontend | Aplicación en ejecución (API y frontend) |
 | ¿Necesita ejecutar la app? | No | Sí |
 | Perspectiva | Interna/estática | Externa/dinámica |
-| Evidencia obtenida en este lab | [resume tu hallazgo real de la Parte A] | [resume tu hallazgo real de la Parte B] |
-| Fortaleza | Detecta patrones/rutas en código | Observa comportamiento real expuesto |
-| Límite | No garantiza lógica de negocio ni autorización | No ve todo el código ni todas las rutas internas |
-
----
+| Evidencia obtenida en este lab | 0 findings en 24 archivos de backend y 47 de frontend, con 210 reglas ejecutadas por análisis. | Baseline intentado contra el puerto 5173, pero el spider recibió `Connection refused`; active scan no ejecutado. |
+| Fortaleza | Detecta patrones de riesgo en el código analizado. | Observa el comportamiento HTTP expuesto cuando el objetivo está disponible. |
+| Límite | No garantiza la corrección de lógica de negocio, autorización ni configuración de ejecución. | No ve todo el código y requiere que el servicio y las rutas estén disponibles y recorridos. |
 
 ## 7. Reflexión
 
 **1. ¿Por qué 0 findings en SAST no equivale a aplicación segura?**
-[Tu respuesta — idealmente conectada con tu propio resultado: si tu backend
-dio pocos/ningún hallazgo de SQLi, explica qué SAST sigue sin poder ver
-(lógica de negocio, autorización, configuración en producción, etc.)]
+Significa únicamente que las reglas ejecutadas no reportaron patrones en los archivos analizados. No demuestra que la lógica de negocio, la autorización por objeto, la configuración de producción o las dependencias estén libres de riesgo. En este laboratorio, el flujo revisado usa consultas parametrizadas, pero eso no cubre todos los controles.
 
 **2. ¿Por qué un WARN de ZAP debe validarse antes de declararlo vulnerabilidad?**
-[Tu respuesta]
+Una alerta puede señalar una recomendación de endurecimiento o un comportamiento que no sea explotable en el contexto concreto. Hay que reproducirla, comprobar el endpoint, la respuesta y el impacto. En esta ejecución no se obtuvo ningún WARN de aplicación: ZAP no logró conectarse.
 
 **3. ¿Qué diferencia observaste entre baseline y active scan?**
-[Tu respuesta, con datos reales de tu ejecución]
+La evidencia disponible solo permite decir que se intentó el baseline pasivo y que su spider falló por `Connection refused`. No se ejecutó active scan, así que no hubo una comparación empírica entre ambos en este entorno.
 
 **4. ¿Por qué 200 OK no descarta una vulnerabilidad?**
-[Tu respuesta]
+El estado 200 solo indica que la solicitud recibió una respuesta satisfactoria a nivel HTTP. La respuesta todavía podría contener datos expuestos o reflejar contenido peligroso; la vulnerabilidad se determina inspeccionando el contenido y el efecto, no solo el código de estado.
 
-**5. ¿Qué aprendiste del hecho de tener que reiniciar el servidor antes del retest?**
-[Tu respuesta — en tu proyecto esto aplica al backend (`npm run api:dev`) y,
-si usaste Vite con hot-reload, explica si el frontend sí se actualizó solo o no]
+**5. ¿Qué aprendiste de tener que reiniciar el servidor antes del retest?**
+El retest debe apuntar a la versión del código realmente cargada por el proceso. En este caso no se llegó a esa etapa: `npm run dev` falló al iniciar el backend porque no encontró `node_modules/tsx/dist/cli.mjs` y el coordinador apagó PostgreSQL. Por ello tampoco se pudo comprobar si Vite habría aplicado cambios con hot reload.
 
 **6. ¿Qué problema de autorización podría seguir existiendo aunque SAST y DAST no lo reporten?**
-[Tu respuesta — puedes usar como ejemplo real el middleware `requireRoles`/
-`requirePermissions` de tu proyecto: protege la ruta por rol, pero ¿valida
-también que, por ejemplo, un profesor solo vea/edite calificaciones de
-*su propio* grupo y no de cualquier grupo? Eso es autorización a nivel de
-objeto (tipo IDOR) y ninguna herramienta automática lo prueba sola.]
-
----
+Podría existir un IDOR/BOLA si un profesor con rol y permiso válidos pudiera consultar o modificar una inscripción o un grupo que no tiene asignado. Los middlewares revisados comprueban rol y permiso, mientras que la relación del profesor con el objeto requiere validación específica. Esta posible brecha no se probó en ejecución y debe verificarse manualmente o con pruebas de autorización.
 
 ## 8. Conclusión
 
-[2-4 líneas cerrando el laboratorio: qué evidencia generaste, qué controles
-del proyecto ya funcionan bien, y qué quedaría pendiente de revisar con más
-profundidad (pruebas de autorización, revisión manual de otros servicios, etc.)]
+Semgrep completó sus análisis de backend y frontend sin findings reportados; la revisión del servicio de calificaciones también observó consultas parametrizadas y validación de entrada. DAST quedó inconcluso: el backend no arrancó por el módulo `tsx` ausente y ZAP no pudo conectarse al frontend en el puerto 5173. Queda pendiente restablecer las dependencias y repetir baseline, active scan y pruebas de autorización por grupo e inscripción.
